@@ -5,74 +5,142 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Рисовалка</title>
 <style>
-  body { font-family: Arial, sans-serif; padding: 10px; }
-  #canvasWrap { position: relative; border: 1px solid #ccc; display:inline-block; }
-  canvas { background: #fff; display:block; }
-  .controls { margin-top:10px; }
+  :root { --toolbar-height: auto; }
+  body { font-family: Arial, sans-serif; padding: 8px; margin:0; box-sizing: border-box; }
+  .app { max-width: 1000px; margin: 0 auto; }
+  #canvasWrap { position: relative; border: 1px solid #ccc; background: #fff; width: 100%; height: calc(100vh - 220px); max-height:700px; }
+  canvas { display:block; width:100%; height:100%; touch-action: none; -ms-touch-action: none; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+  .controls > * { margin: 4px 0; }
+  .status { margin-left:8px; }
+  #eraserCursor { position:absolute; pointer-events:none; border:2px dashed rgba(0,0,0,0.6); border-radius:50%; transform:translate(-50%,-50%); display:none; z-index:999; }
+  @media (max-width:600px) {
+    .controls { gap:6px; }
+    #canvasWrap { height: calc(100vh - 300px); }
+  }
 </style>
 </head>
 <body>
-<h3>Мини-рисовалка</h3>
-<div id="canvasWrap">
-  <canvas id="c" width="800" height="500"></canvas>
-</div>
+<div class="app">
+  <h3>Мини-рисовалка</h3>
+  <div id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div id="eraserCursor"></div>
+  </div>
 
-<div class="controls">
-  Цвет: <input type="color" id="color" value="#000000">
-  Толщина: <input id="size" type="range" min="1" max="100" value="5">
-  Непрозрачность: <input id="alpha" type="range" min="0.1" max="1" step="0.1" value="1">
-  <button id="eraser">Ластик</button>
-  <button id="brush">Кисть</button>
-  <button id="clear">Очистить</button>
-  <button id="download">Скачать PNG</button>
-</div>
+  <div class="controls" id="controls">
+    <label>Цвет: <input type="color" id="color" value="#000000"></label>
+    <label>Толщина: <input id="size" type="range" min="1" max="100" value="5"></label>
+    <label>Непрозрачность: <input id="alpha" type="range" min="0.1" max="1" step="0.1" value="1"></label>
+    <button id="brush">Кисть</button>
+    <button id="eraser">Ластик</button>
+    <button id="clear">Очистить</button>
+    <button id="download">Скачать PNG</button>
+  </div>
 
-<div style="margin-top:8px;">
-  Telegram chat_id (если хочешь отправить рисунок в чат): <input id="chat_id" placeholder="123456789">
-  <button id="send">Отправить в чат</button>
-  <span id="status"></span>
+  <div style="margin-top:8px;">
+    Telegram chat_id: <input id="chat_id" placeholder="123456789">
+    <button id="send">Отправить в чат</button>
+    <span id="status" class="status"></span>
+  </div>
 </div>
 
 <script>
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const wrap = document.getElementById('canvasWrap');
+const ctx = canvas.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+
 let drawing = false;
 let mode = 'brush';
-
 const colorInp = document.getElementById('color');
 const sizeInp = document.getElementById('size');
 const alphaInp = document.getElementById('alpha');
 const status = document.getElementById('status');
+const eraserCursor = document.getElementById('eraserCursor');
 
-function setBrush() {
-  ctx.globalCompositeOperation = 'source-over';
+function resizeAndPreserve() {
+  // Сохраняем текущее содержимое
+  const temp = document.createElement('canvas');
+  temp.width = canvas.width;
+  temp.height = canvas.height;
+  temp.getContext('2d').drawImage(canvas, 0, 0);
+
+  // Устанавливаем новые пиксельные размеры под текущий wrap
+  const rect = wrap.getBoundingClientRect();
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = 'round';
+  // Восстанавливаем изображение (масштабируется автоматически)
+  ctx.drawImage(temp, 0, 0, temp.width / dpr, temp.height / dpr, 0, 0, canvas.width / dpr, canvas.height / dpr);
+}
+window.addEventListener('resize', resizeAndPreserve);
+resizeAndPreserve();
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = (e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] && e.touches[0].clientX));
+  const clientY = (e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] && e.touches[0].clientY));
+  const x = (clientX - rect.left) * (canvas.width / rect.width) / dpr;
+  const y = (clientY - rect.top) * (canvas.height / rect.height) / dpr;
+  return { x, y };
+}
+
+function setBrushMode() {
   mode = 'brush';
+  ctx.globalCompositeOperation = 'source-over';
+  eraserCursor.style.display = 'none';
 }
-function setEraser() {
-  ctx.globalCompositeOperation = 'destination-out';
+function setEraserMode() {
   mode = 'eraser';
+  ctx.globalCompositeOperation = 'destination-out';
+  eraserCursor.style.display = 'block';
 }
 
-canvas.addEventListener('pointerdown', e => {
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
   drawing = true;
   ctx.beginPath();
-  ctx.lineCap = 'round';
+  const p = getPos(e);
+  ctx.moveTo(p.x, p.y);
   ctx.strokeStyle = colorInp.value;
   ctx.lineWidth = sizeInp.value;
   ctx.globalAlpha = alphaInp.value;
-  ctx.moveTo(e.offsetX, e.offsetY);
 });
-canvas.addEventListener('pointermove', e => {
+
+canvas.addEventListener('pointermove', (e) => {
+  if (mode === 'eraser') {
+    // позиция курсора-ластика
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    eraserCursor.style.left = cx + 'px';
+    eraserCursor.style.top = cy + 'px';
+    eraserCursor.style.width = sizeInp.value + 'px';
+    eraserCursor.style.height = sizeInp.value + 'px';
+  }
   if (!drawing) return;
-  ctx.lineTo(e.offsetX, e.offsetY);
+  e.preventDefault();
+  const p = getPos(e);
+  ctx.lineTo(p.x, p.y);
   ctx.stroke();
 });
-canvas.addEventListener('pointerup', () => { drawing = false; });
 
-document.getElementById('eraser').onclick = () => setEraser();
-document.getElementById('brush').onclick = () => setBrush();
-document.getElementById('clear').onclick = () => { ctx.clearRect(0,0,canvas.width,canvas.height); };
+canvas.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+  drawing = false;
+});
 
+canvas.addEventListener('pointercancel', () => { drawing = false; });
+
+document.getElementById('eraser').onclick = () => setEraserMode();
+document.getElementById('brush').onclick = () => setBrushMode();
+document.getElementById('clear').onclick = () => { ctx.clearRect(0,0,canvas.width/dpr,canvas.height/dpr); };
 document.getElementById('download').onclick = () => {
   const data = canvas.toDataURL('image/png');
   const a = document.createElement('a');
@@ -98,6 +166,9 @@ document.getElementById('send').onclick = async () => {
     status.textContent = 'Ошибка сети: ' + e.message;
   }
 };
+
+// Инициализируем режим по умолчанию
+setBrushMode();
 </script>
 </body>
 </html>
