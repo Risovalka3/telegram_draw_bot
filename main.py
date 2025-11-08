@@ -1,18 +1,23 @@
 # main.py
 """
 Flask server for the Telegram drawing mini-app.
-- Serves `static/index.html` (static folder sits next to this file)
-- POST /upload accepts JSON { image: "data:image/png;base64,...", chat_id?: "123" }
-  saves image to static/uploads and (if TELEGRAM_TOKEN set and chat_id provided) sends photo to Telegram chat
-- POST /webhook receives Telegram updates (if TELEGRAM_TOKEN provided and webhook set)
 
-Designed for deployment to Render (uses PORT env var). Use .env for TELEGRAM_TOKEN and WEBHOOK_URL locally.
+Changes in this version:
+- Added Telegram /start handler: when user sends /start the bot replies with an InlineKeyboardButton linking to the web app URL with the user's chat_id as a query parameter.
+- Added a /check route that returns whether static/index.html exists (for debug on Render).
+- Added a catch-all route so that unknown paths are served with static files if they exist or return index.html (works for single-page apps and avoids Not Found on Render).
+- Keeps the /upload and /webhook endpoints.
+
+Environment variables used:
+- TELEGRAM_TOKEN - token for your bot (optional for serving static site without Telegram features)
+- WEBHOOK_URL - (optional) URL where Telegram should post updates (used to set webhook on start)
+- APP_URL - public URL of the web application (used to build the link sent by /start). If APP_URL is not set, the bot will try to use WEBHOOK_URL. If neither is set, /start will tell the user that the app URL is not configured.
 """
 
 import os
 import base64
 import uuid
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from pathlib import Path
 
 # Optional: import telebot if available
@@ -30,24 +35,49 @@ except Exception:
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # e.g. https://your-service.onrender.com
+APP_URL = os.getenv('APP_URL')  # e.g. https://your-service.onrender.com - used for /start button link
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
 UPLOADS_DIR = os.path.join(STATIC_DIR, 'uploads')
 Path(UPLOADS_DIR).mkdir(parents=True, exist_ok=True)
 
-# Serve static files at the root (so /index.html -> static/index.html and /uploads/... works)
+# Serve static files at the root
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path='')
 
 bot = None
 if telebot and TELEGRAM_TOKEN:
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+    # register a handler for /start
+    @bot.message_handler(commands=['start'])
+    def handle_start(message):
+        chat_id = message.chat.id
+        # prefer APP_URL, fallback to WEBHOOK_URL
+        base_url = (APP_URL or WEBHOOK_URL or '').rstrip('/')
+        if not base_url:
+            bot.send_message(chat_id, "Администратор не настроил APP_URL или WEBHOOK_URL — не могу открыть мини-рисовалку.")
+            return
+
+        # build link to app including chat_id so frontend can auto-fill
+        url = f"{base_url}/?chat_id={chat_id}"
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(telebot.types.InlineKeyboardButton(text='Открыть мини-рисовалку', url=url))
+
+        bot.send_message(chat_id, "Нажми кнопку ниже, чтобы открыть мини-рисовалку. Нарисуй картинку и нажми 'Отправить в чат' — она придёт сюда.", reply_markup=markup)
+
 
 @app.route('/')
 def index():
-    # send index.html from the static folder
+    # serve index.html from static
     return app.send_static_file('index.html')
+
+
+@app.route('/check')
+def check():
+    # debug endpoint to see if static/index.html is present on the server
+    exists = os.path.exists(os.path.join(STATIC_DIR, 'index.html'))
+    return f"STATIC_DIR: {STATIC_DIR}<br>index.html exists: {exists}"
 
 
 @app.route('/upload', methods=['POST'])
@@ -81,7 +111,6 @@ def upload():
     with open(filepath, 'wb') as f:
         f.write(img_bytes)
 
-    # build public-ish path relative to app root
     # static files are served at '/', so file will be available at /uploads/<filename>
     file_url = f"/uploads/{filename}"
 
@@ -110,6 +139,16 @@ def webhook():
         return '', 200
     except Exception as e:
         return jsonify({'error': 'failed processing update', 'detail': str(e)}), 500
+
+
+# Catch-all: if a file exists in static, serve it; otherwise serve index.html (helps SPA routing on Render)
+@app.route('/<path:path>')
+def catch_all(path):
+    candidate = os.path.join(STATIC_DIR, path)
+    if os.path.exists(candidate) and os.path.isfile(candidate):
+        return send_from_directory(STATIC_DIR, path)
+    # otherwise return index.html so client-side routing works
+    return app.send_static_file('index.html')
 
 
 if __name__ == '__main__':
