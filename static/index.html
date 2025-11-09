@@ -5,71 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Рисовалка — WebApp</title>
 <style>
-  :root{
-    --gap:8px;
-    --control-height:44px;
-    --bg:#fafafa;
-    --accent:#6aa6ff;
-    --muted:#666;
-  }
-  html,body{
-    height:100%;
-    margin:0;
-    background:var(--bg);
-    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-    -webkit-font-smoothing:antialiased;
-  }
-
-  .wrap{
-    max-width:940px;
-    margin:10px auto;
-    padding:10px;
-    box-sizing:border-box;
-  }
-  header{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px;}
-  h3{ margin:0; font-size:18px; }
-  #canvasWrap{
-    position:relative;
-    width:100%;
-    border:1px solid #ddd;
-    background:white;
-    border-radius:8px;
-    overflow:hidden;
-    touch-action:none; /* we'll control scrolling in JS */
-  }
-  canvas{
-    display:block;
-    width:100%;
-    height:auto;
-    -webkit-user-select:none;
-    user-select:none;
-    -webkit-touch-callout:none;
-    background:transparent;
-    touch-action:none;
-  }
-
-  .controls{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-top:10px;
-    align-items:center;
-  }
-  .tool-btn{
-    min-width:44px;
-    height:var(--control-height);
-    padding:6px 10px;
-    border-radius:8px;
-    border:1px solid #ddd;
-    background:white;
-    display:flex;
-    gap:6px;
-    align-items:center;
-    justify-content:center;
-    cursor:pointer;
-    font-size:14px;
-    user-select:none;
-  }
+  :root{ --bg:#fafafa; --accent:#6aa6ff; --muted:#666; }
+  html,body{ height:100%; margin:0; background:var(--bg); font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto; -webkit-font-smoothing:antialiased; }
+  .wrap{ max-width:940px; margin:10px auto; padding:10px; box-sizing:border-box; }
+  header{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+  #canvasWrap{ position:relative; width:100%; border:1px solid #ddd; background:white; border-radius:8px; overflow:hidden; touch-action:none; }
+  canvas{ display:block; width:100%; height:auto; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; background:transparent; }
+  .controls{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; }
+  .tool-btn{ min-width:44px; height:44px; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:white; display:flex; gap:6px; align-items:center; justify-content:center; cursor:pointer; font-size:14px; user-select:none; }
   .tool-btn:focus{ outline: none; }
   .tool-btn.active{ outline:2px solid var(--accent); box-shadow:0 2px 6px rgba(100,150,255,0.12); }
   .tool-btn.flash{ outline:2px solid var(--accent); box-shadow:0 2px 6px rgba(100,150,255,0.18); }
@@ -77,59 +20,34 @@
   input[type="range"]{ width:120px; }
   .right{ display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
   #status{ font-size:13px; color:var(--muted); min-width:120px; }
-
-  #cursorPreview{
-    position:absolute;
-    pointer-events:none;
-    transform:translate(-50%,-50%);
-    display:none;
-    border-radius:50%;
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset;
-    z-index:40;
-    background:transparent;
-  }
-
-  /* palette */
+  #cursorPreview{ position:absolute; pointer-events:none; transform:translate(-50%,-50%); display:none; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset; z-index:40; }
   .palette-wrap{ display:flex; gap:12px; align-items:flex-start; margin-top:12px; flex-wrap:wrap; }
   #paletteCanvas{ width:160px; height:120px; border-radius:6px; border:1px solid #ddd; touch-action:none; }
   .color-controls{ display:flex; flex-direction:column; gap:6px; font-size:13px; }
   .rgb-row{ display:flex; gap:6px; align-items:center; }
-
-  /* responsive adjustments */
-  @media (max-width:800px){
-    .controls{ gap:6px; }
-    .right{ margin-left:0; width:100%; justify-content:space-between; }
-    input[type="range"]{ width:140px; }
-    .palette-wrap{ gap:8px; }
-  }
-
-  /* small helper animations */
-  .flash {
-    transition: box-shadow .12s, outline .12s;
-  }
+  @media (max-width:800px){ .controls{ gap:6px; } .right{ margin-left:0; width:100%; justify-content:space-between; } input[type="range"]{ width:140px; } .palette-wrap{ gap:8px; } }
+  .flash { transition: box-shadow .12s, outline .12s; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h3>🎨 Мини-рисовалка</h3>
-    <div style="font-size:13px;color:var(--muted);">Инструменты: кисть, карандаш, маркер, заливка, ластик. Работает на мобильных.</div>
+    <div style="font-size:13px;color:var(--muted);">Инструменты: кисть, карандаш, маркер, заливка, ластик — адаптировано под мобильные.</div>
   </header>
 
-  <!-- canvasWrap помечаем как интерактивную область (no-scroll) -->
   <div id="canvasWrap" aria-label="Рисовальный холст" data-no-scroll>
     <canvas id="c" width="800" height="800" aria-label="Холст"></canvas>
     <div id="cursorPreview" aria-hidden="true"></div>
   </div>
 
-  <!-- Инструменты -->
   <div class="controls" aria-hidden="false">
     <div class="row" style="display:flex;gap:8px;align-items:center;">
-      <button class="tool-btn active" data-tool="brush" id="tool_brush">🖌️ Кисть</button>
-      <button class="tool-btn" data-tool="pencil" id="tool_pencil">✏️ Карандаш</button>
-      <button class="tool-btn" data-tool="marker" id="tool_marker">🖍️ Маркер</button>
-      <button class="tool-btn" data-tool="fill" id="tool_fill">🪣 Заливка</button>
-      <button class="tool-btn" data-tool="eraser" id="tool_eraser">🧽 Ластик</button>
+      <button class="tool-btn active" data-tool="brush">🖌️ Кисть</button>
+      <button class="tool-btn" data-tool="pencil">✏️ Карандаш</button>
+      <button class="tool-btn" data-tool="marker">🖍️ Маркер</button>
+      <button class="tool-btn" data-tool="fill">🪣 Заливка</button>
+      <button class="tool-btn" data-tool="eraser">🧽 Ластик</button>
     </div>
 
     <div class="row" style="align-items:center;">
@@ -150,7 +68,6 @@
     </div>
   </div>
 
-  <!-- палитра и точный ввод цвета -->
   <div class="palette-wrap">
     <canvas id="paletteCanvas" width="160" height="120" data-no-scroll></canvas>
     <div class="color-controls">
@@ -173,39 +90,24 @@
 </div>
 
 <script>
-/* ========== Helpers ========== */
+/* ---------- Helpers ---------- */
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-function hexToRgb(hex){
-  if(!hex) return [0,0,0];
-  if(hex[0]==='#') hex = hex.slice(1);
-  if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
-  const n = parseInt(hex,16);
-  return [(n>>16)&255, (n>>8)&255, n&255];
-}
-function rgbToHex(r,g,b){
-  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-function flashBtn(btn){
-  if(!btn) return;
-  btn.classList.add('flash');
-  setTimeout(()=> btn.classList.remove('flash'), 200);
-}
+function hexToRgb(hex){ if(!hex) return [0,0,0]; if(hex[0]==='#') hex = hex.slice(1); if(hex.length===3) hex = hex.split('').map(c=>c+c).join(''); const n = parseInt(hex,16); return [(n>>16)&255, (n>>8)&255, n&255]; }
+function rgbToHex(r,g,b){ return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+function flashBtn(btn){ if(!btn) return; btn.classList.add('flash'); setTimeout(()=> btn.classList.remove('flash'), 200); }
 
-/* ========== Elements & state ========== */
-const wrap = document.querySelector('.wrap');
+/* ---------- Elements & state ---------- */
 const canvasWrap = $('#canvasWrap');
 const canvas = $('#c');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 const cursorPreview = $('#cursorPreview');
-
 const palette = $('#paletteCanvas');
 const pctx = palette.getContext('2d');
 const preview = $('#preview');
 const hexInput = $('#hexInput');
 const rIn = $('#r'), gIn = $('#g'), bIn = $('#b');
-
 const sizeInp = $('#size'), alphaInp = $('#alpha');
 const status = $('#status');
 
@@ -213,51 +115,54 @@ let tool = 'brush';
 let drawing = false;
 let last = {x:0,y:0};
 let pointerId = null;
+let currentColor = '#000000';
 
-/* ========== Canvas sizing (square) and preserve content on resize ========== */
-function fitCanvasToContainer(){
-  const cw = Math.max(280, Math.min(1100, Math.round(canvasWrap.clientWidth)));
-  const newW = cw;
-  const old = document.createElement('canvas');
-  old.width = canvas.width; old.height = canvas.height;
-  old.getContext('2d').drawImage(canvas,0,0);
-  canvas.width = newW;
-  canvas.height = newW; // square
+/* ---------- Canvas sizing (square) ---------- */
+function fitCanvas(){
+  const w = Math.max(280, Math.min(1100, Math.round(canvasWrap.clientWidth)));
+  // preserve content
+  const tmp = document.createElement('canvas');
+  tmp.width = canvas.width; tmp.height = canvas.height;
+  tmp.getContext('2d').drawImage(canvas,0,0);
+  canvas.width = w; canvas.height = w;
+  canvas.style.width = '100%';
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(old, 0,0, old.width, old.height, 0,0, canvas.width, canvas.height);
-  updateCursorPreview(); // recalc preview size
+  ctx.drawImage(tmp, 0,0, tmp.width, tmp.height, 0,0, canvas.width, canvas.height);
+  updateCursorPreview();
 }
-window.addEventListener('resize', fitCanvasToContainer);
-fitCanvasToContainer();
+window.addEventListener('resize', fitCanvas);
+fitCanvas();
 
-/* ========== Cursor preview (circle under finger) ========== */
+/* ---------- Cursor preview ---------- */
 function updateCursorPreview(){
   const sz = Math.max(4, parseInt(sizeInp.value,10) || 8);
   cursorPreview.style.width = sz + 'px';
   cursorPreview.style.height = sz + 'px';
   cursorPreview.style.borderRadius = '50%';
-  cursorPreview.style.boxSizing = 'border-box';
   cursorPreview.style.display = 'none';
+  cursorPreview.style.boxSizing = 'border-box';
   cursorPreview.style.background = (tool === 'eraser') ? 'transparent' : currentColor;
   cursorPreview.style.opacity = (tool === 'eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1);
   cursorPreview.style.border = (tool === 'eraser') ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.08)';
 }
+updateCursorPreview();
 
-/* ========== Tools handling ========== */
+/* ---------- Tools ---------- */
 function setActiveTool(t){
   tool = t;
   $$('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
   updateCursorPreview();
-  // provide accessible status
   status.textContent = `Инструмент: ${t}`;
 }
 $$('.tool-btn[data-tool]').forEach(btn=>{
-  btn.addEventListener('click', ()=> {
+  btn.addEventListener('click', ()=>{
+    // flash feedback for quick click
+    flashBtn(btn);
     setActiveTool(btn.dataset.tool);
   });
 });
 
-/* ========== Drawing helpers ========== */
+/* ---------- Drawing helpers ---------- */
 function getCanvasPosFromClient(clientX, clientY){
   const rect = canvas.getBoundingClientRect();
   return {
@@ -267,11 +172,9 @@ function getCanvasPosFromClient(clientX, clientY){
 }
 
 function setCtxForTool(){
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  ctx.setTransform(1,0,0,1,0,0); // reset transform
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
-
-  // set width & alpha depending on tool
   if(tool === 'marker'){
     ctx.lineWidth = Math.max(6, parseInt(sizeInp.value,10) * 1.6);
     ctx.globalAlpha = Math.max(0.12, parseFloat(alphaInp.value) * 0.6);
@@ -282,11 +185,9 @@ function setCtxForTool(){
     ctx.lineWidth = Math.max(1, parseInt(sizeInp.value,10));
     ctx.globalAlpha = parseFloat(alphaInp.value);
   }
-
   ctx.strokeStyle = (tool === 'eraser') ? 'rgba(0,0,0,1)' : currentColor;
 }
 
-/* pencil texture */
 function drawPencilStroke(x1,y1,x2,y2){
   const pencilAlpha = Math.max(0.15, parseFloat(alphaInp.value) * 0.9);
   const steps = Math.max(6, Math.floor(Math.hypot(x2-x1,y2-y1)/2));
@@ -295,336 +196,91 @@ function drawPencilStroke(x1,y1,x2,y2){
     const cx = x1 + (x2-x1)*t + (Math.random()-0.5)*1.8;
     const cy = y1 + (y2-y1)*t + (Math.random()-0.5)*1.8;
     ctx.globalAlpha = pencilAlpha * (0.7 + Math.random()*0.6);
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    const nx = cx + (Math.random()-0.5)*1.2;
-    const ny = cy + (Math.random()-0.5)*1.2;
-    ctx.lineTo(nx, ny);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    const nx = cx + (Math.random()-0.5)*1.2; const ny = cy + (Math.random()-0.5)*1.2;
+    ctx.lineTo(nx, ny); ctx.stroke();
   }
 }
 
-function drawLine(x1,y1,x2,y2){
-  ctx.beginPath();
-  ctx.moveTo(x1,y1);
-  ctx.lineTo(x2,y2);
-  ctx.stroke();
-}
+function drawLine(x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
 
-/* flood fill (scanline) - same as before */
-function floodFill(startX, startY, fillRGBA){
-  try{
-    const w = canvas.width, h = canvas.height;
-    const img = ctx.getImageData(0,0,w,h);
-    const data = img.data;
-    const getIdx = (x,y)=> (y*w + x)*4;
-    const t = getIdx(startX,startY);
-    const tr = data[t], tg = data[t+1], tb = data[t+2], ta = data[t+3];
-    if(tr===fillRGBA[0] && tg===fillRGBA[1] && tb===fillRGBA[2] && ta===fillRGBA[3]) return;
-    const stack = [[startX,startY]];
-    while(stack.length){
-      const [x,y] = stack.pop();
-      let nx = x;
-      while(nx >= 0){
-        const i = getIdx(nx,y);
-        if(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta) nx--; else break;
-      }
-      nx++;
-      let spanUp = false, spanDown = false;
-      while(nx < w){
-        const i = getIdx(nx,y);
-        if(!(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta)) break;
-        data[i]=fillRGBA[0]; data[i+1]=fillRGBA[1]; data[i+2]=fillRGBA[2]; data[i+3]=fillRGBA[3];
-        if(y>0){
-          const iu = getIdx(nx,y-1);
-          if(data[iu] === tr && data[iu+1] === tg && data[iu+2] === tb && data[iu+3] === ta){
-            if(!spanUp){ stack.push([nx,y-1]); spanUp=true; }
-          } else spanUp=false;
-        }
-        if(y<h-1){
-          const idn = getIdx(nx,y+1);
-          if(data[idn] === tr && data[idn+1] === tg && data[idn+2] === tb && data[idn+3] === ta){
-            if(!spanDown){ stack.push([nx,y+1]); spanDown=true; }
-          } else spanDown=false;
-        }
-        nx++;
-      }
-    }
-    ctx.putImageData(img,0,0);
-  }catch(e){ console.error("fill error", e); }
-}
+/* flood fill (scanline) */
+function floodFill(startX, startY, fillRGBA){ try{ const w = canvas.width, h = canvas.height; const img = ctx.getImageData(0,0,w,h); const data = img.data; const getIdx = (x,y)=> (y*w + x)*4; const t = getIdx(startX,startY); const tr = data[t], tg = data[t+1], tb = data[t+2], ta = data[t+3]; if(tr===fillRGBA[0] && tg===fillRGBA[1] && tb===fillRGBA[2] && ta===fillRGBA[3]) return; const stack = [[startX,startY]]; while(stack.length){ const [x,y] = stack.pop(); let nx = x; while(nx >= 0){ const i = getIdx(nx,y); if(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta) nx--; else break; } nx++; let spanUp=false, spanDown=false; while(nx < w){ const i = getIdx(nx,y); if(!(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta)) break; data[i]=fillRGBA[0]; data[i+1]=fillRGBA[1]; data[i+2]=fillRGBA[2]; data[i+3]=fillRGBA[3]; if(y>0){ const iu = getIdx(nx,y-1); if(data[iu] === tr && data[iu+1] === tg && data[iu+2] === tb && data[iu+3] === ta){ if(!spanUp){ stack.push([nx,y-1]); spanUp=true; } } else spanUp=false; } if(y<h-1){ const idn = getIdx(nx,y+1); if(data[idn] === tr && data[idn+1] === tg && data[idn+2] === tb && data[idn+3] === ta){ if(!spanDown){ stack.push([nx,y+1]); spanDown=true; } } else spanDown=false; } nx++; } } ctx.putImageData(img,0,0); }catch(e){ console.error("fill error", e); } }
 
-/* ========== Pointer / touch handling (canvas) ========== */
+/* ---------- Pointer handling ---------- */
 function onPointerDown(clientX, clientY, pId){
   const pos = getCanvasPosFromClient(clientX, clientY);
   if(tool === 'fill'){
-    const rgba = hexToRgb(currentColor);
-    rgba.push(Math.round(parseFloat(alphaInp.value)*255));
-    floodFill(pos.x, pos.y, rgba);
-    status.textContent = 'Заливка применена';
-    return;
+    const rgba = hexToRgb(currentColor); rgba.push(Math.round(parseFloat(alphaInp.value)*255)); floodFill(pos.x, pos.y, rgba); status.textContent = 'Заливка применена'; return;
   }
-  drawing = true;
-  last.x = pos.x; last.y = pos.y;
-  pointerId = pId;
-  setCtxForTool();
-  // show preview
-  cursorPreview.style.display = 'block';
-  moveCursorPreviewPosition(clientX, clientY);
+  drawing = true; last.x = pos.x; last.y = pos.y; pointerId = pId; setCtxForTool();
+  // ensure there's a visible dot if user taps without moving
+  ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(last.x+0.01,last.y+0.01); ctx.stroke();
+  cursorPreview.style.display = 'block'; moveCursorPreviewPosition(clientX, clientY);
 }
 
 function onPointerMove(clientX, clientY, pId){
   moveCursorPreviewPosition(clientX, clientY);
-  if(!drawing) return;
-  if(pointerId !== null && pId !== pointerId) return;
+  if(!drawing) return; if(pointerId !== null && pId !== pointerId) return;
   const pos = getCanvasPosFromClient(clientX, clientY);
-  if(tool === 'pencil') drawPencilStroke(last.x,last.y,pos.x,pos.y);
-  else drawLine(last.x,last.y,pos.x,pos.y);
+  if(tool === 'pencil') drawPencilStroke(last.x,last.y,pos.x,pos.y); else drawLine(last.x,last.y,pos.x,pos.y);
   last.x = pos.x; last.y = pos.y;
 }
 
-function onPointerUp(clientX, clientY, pId){
-  drawing = false;
-  pointerId = null;
-  cursorPreview.style.display = 'none';
-}
+function onPointerUp(clientX, clientY, pId){ drawing = false; pointerId = null; cursorPreview.style.display = 'none'; }
 
-/* attach pointer events with pointer capture */
-canvas.addEventListener('pointerdown', (e)=>{
-  // prevent page scroll while touching canvas
-  e.preventDefault();
-  try{ canvas.setPointerCapture(e.pointerId); }catch(e){}
-  onPointerDown(e.clientX, e.clientY, e.pointerId);
-});
-canvas.addEventListener('pointermove', (e)=>{
-  onPointerMove(e.clientX, e.clientY, e.pointerId);
-});
-canvas.addEventListener('pointerup', (e)=>{
-  try{ canvas.releasePointerCapture(e.pointerId); }catch(e){}
-  onPointerUp(e.clientX, e.clientY, e.pointerId);
-});
-canvas.addEventListener('pointercancel', (e)=>{
-  try{ canvas.releasePointerCapture(e.pointerId); }catch(e){}
-  onPointerUp(e.clientX, e.clientY, e.pointerId);
-});
-
-/* touch fallback (some environments) */
-canvas.addEventListener('touchstart', (e)=>{
-  const t = e.touches[0];
-  onPointerDown(t.clientX, t.clientY, 'touch');
-  e.preventDefault();
-}, { passive:false });
-canvas.addEventListener('touchmove', (e)=>{
-  const t = e.touches[0];
-  onPointerMove(t.clientX, t.clientY, 'touch');
-  e.preventDefault();
-}, { passive:false });
-canvas.addEventListener('touchend', (e)=>{
-  onPointerUp(0,0,'touch');
-}, { passive:false });
-
-/* update preview position to follow pointer */
-function moveCursorPreviewPosition(clientX, clientY){
-  const rect = canvas.getBoundingClientRect();
-  const cssX = clientX - rect.left;
-  const cssY = clientY - rect.top;
-  cursorPreview.style.left = cssX + 'px';
-  cursorPreview.style.top = cssY + 'px';
-  const displaySize = Math.max(4, parseInt(sizeInp.value,10) * (rect.width / canvas.width));
-  cursorPreview.style.width = displaySize + 'px';
-  cursorPreview.style.height = displaySize + 'px';
-  cursorPreview.style.border = tool==='eraser' ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.1)';
-  cursorPreview.style.background = (tool==='eraser') ? 'transparent' : currentColor;
-  cursorPreview.style.opacity = (tool==='eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1);
-}
-
-/* Prevent page scroll while touching interactive areas (canvas, palette) but allow scroll on background */
-document.addEventListener('touchmove', function(e){
-  // if touch within any element with attribute data-no-scroll -> prevent scroll
-  const t = e.target;
-  if(t && (t.closest('[data-no-scroll]') || t.closest('#paletteCanvas') || t.closest('.palette-wrap') || t.closest('.tool-btn'))){
-    e.preventDefault();
-  }
-}, { passive:false });
-
-/* ========== Clear / Download / Send ========= */
-$('#clear').addEventListener('click', ()=>{
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  status.textContent = 'Холст очищен';
-  flashBtn($('#clear'));
-});
-
-function downloadCanvas(){
-  // try toBlob first (better on mobile). fallback to toDataURL.
-  if(canvas.toBlob){
-    canvas.toBlob(function(blob){
-      if(!blob){ status.textContent = 'Сохранение не получилось'; return; }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'drawing.png';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      status.textContent = 'Скачано';
-    }, 'image/png');
-  } else {
-    const data = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = data;
-    a.download = 'drawing.png';
-    a.click();
-    status.textContent = 'Скачено (fallback)';
-  }
-}
-
-$('#download').addEventListener('click', ()=>{
-  downloadCanvas();
-  flashBtn($('#download'));
-});
-
-$('#send').addEventListener('click', async ()=>{
-  const img = canvas.toDataURL('image/png');
-  const chat_id = $('#chat_id').value.trim();
-  if(!chat_id){ status.textContent = 'Введите chat_id'; return; }
-  status.textContent = 'Отправка…';
-  try{
-    const res = await fetch('/upload', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({ image: img, chat_id: chat_id })
-    });
-    const j = await res.json();
-    if(res.ok){ status.textContent = 'OK: ' + (j.status || 'sent'); }
-    else { status.textContent = 'Ошибка: ' + JSON.stringify(j); }
-  }catch(e){
-    status.textContent = 'Ошибка сети: ' + e.message;
-  }
-});
-
-/* ========== initial ctx defaults ========== */
-ctx.lineJoin = 'round';
-ctx.lineCap = 'round';
-let currentColor = '#000000';
-ctx.strokeStyle = currentColor;
-ctx.lineWidth = parseInt(sizeInp.value,10);
-updateCursorPreview();
-
-/* update ctx when controls change */
-[sizeInp, alphaInp].forEach(inp => inp.addEventListener('input', ()=>{
-  setCtxForTool();
-  updateCursorPreview();
-}));
-
-/* ========== Palette implementation ========== */
-function drawPalette(){
-  const w = palette.width = Math.max(160, Math.round(palette.clientWidth));
-  const h = palette.height = 120;
-  // hue horizontal gradient
-  const hueGrad = pctx.createLinearGradient(0,0,w,0);
-  hueGrad.addColorStop(0,'#ff0000'); hueGrad.addColorStop(0.17,'#ffff00');
-  hueGrad.addColorStop(0.33,'#00ff00'); hueGrad.addColorStop(0.5,'#00ffff');
-  hueGrad.addColorStop(0.66,'#0000ff'); hueGrad.addColorStop(0.82,'#ff00ff'); hueGrad.addColorStop(1,'#ff0000');
-  pctx.fillStyle = hueGrad; pctx.fillRect(0,0,w,h);
-  // add white -> transparent -> black overlay vertically
-  const g2 = pctx.createLinearGradient(0,0,0,h);
-  g2.addColorStop(0,'rgba(255,255,255,1)');
-  g2.addColorStop(0.5,'rgba(255,255,255,0)');
-  g2.addColorStop(0.5,'rgba(0,0,0,0)');
-  g2.addColorStop(1,'rgba(0,0,0,0.6)');
-  pctx.fillStyle = g2; pctx.fillRect(0,0,w,h);
-}
-drawPalette();
-window.addEventListener('resize', drawPalette);
-
-let isPalDown = false;
-function palettePointer(eventClientX, eventClientY){
-  const rect = palette.getBoundingClientRect();
-  const x = clamp(Math.round((eventClientX - rect.left) * (palette.width / rect.width)), 0, palette.width-1);
-  const y = clamp(Math.round((eventClientY - rect.top) * (palette.height / rect.height)), 0, palette.height-1);
-  const d = pctx.getImageData(x,y,1,1).data;
-  const hex = rgbToHex(d[0], d[1], d[2]);
-  currentColor = hex;
-  hexInput.value = hex;
-  rIn.value = d[0]; gIn.value = d[1]; bIn.value = d[2];
-  preview.style.background = hex;
-  setCtxForTool();
-  updateCursorPreview();
-}
-
-palette.addEventListener('pointerdown', (e)=>{
-  isPalDown = true;
-  try{ palette.setPointerCapture(e.pointerId); }catch(e){}
-  palettePointer(e.clientX, e.clientY);
-  e.preventDefault();
-});
-palette.addEventListener('pointermove', (e)=>{
-  if(isPalDown) palettePointer(e.clientX, e.clientY);
-});
-palette.addEventListener('pointerup', (e)=>{
-  isPalDown = false;
-  try{ palette.releasePointerCapture(e.pointerId); }catch(e){}
-});
-palette.addEventListener('pointercancel', ()=> isPalDown = false);
+canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); try{ canvas.setPointerCapture(e.pointerId); }catch{} onPointerDown(e.clientX, e.clientY, e.pointerId); });
+canvas.addEventListener('pointermove', (e)=>{ onPointerMove(e.clientX, e.clientY, e.pointerId); });
+canvas.addEventListener('pointerup', (e)=>{ try{ canvas.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX, e.clientY, e.pointerId); });
+canvas.addEventListener('pointercancel', (e)=>{ try{ canvas.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX, e.clientY, e.pointerId); });
 
 // touch fallback
-palette.addEventListener('touchstart', (e)=>{
-  const t = e.touches[0];
-  isPalDown = true;
-  palettePointer(t.clientX, t.clientY);
-  e.preventDefault();
-}, { passive:false });
-palette.addEventListener('touchmove', (e)=>{
-  const t = e.touches[0];
-  if(isPalDown) palettePointer(t.clientX, t.clientY);
-  e.preventDefault();
-}, { passive:false });
-palette.addEventListener('touchend', (e)=>{
-  isPalDown = false;
-}, { passive:false });
+canvas.addEventListener('touchstart', (e)=>{ const t = e.touches[0]; onPointerDown(t.clientX, t.clientY, 'touch'); e.preventDefault(); }, { passive:false });
+canvas.addEventListener('touchmove', (e)=>{ const t = e.touches[0]; onPointerMove(t.clientX, t.clientY, 'touch'); e.preventDefault(); }, { passive:false });
+canvas.addEventListener('touchend', (e)=>{ onPointerUp(0,0,'touch'); }, { passive:false });
 
-/* manual inputs */
-hexInput.addEventListener('change', ()=>{
-  const val = hexInput.value.trim();
-  const v = val.startsWith('#') ? val : '#' + val;
-  const [r,g,b] = hexToRgb(v);
-  currentColor = v;
-  preview.style.background = v;
-  rIn.value = r; gIn.value = g; bIn.value = b;
-  setCtxForTool();
-  updateCursorPreview();
-});
-[rIn,gIn,bIn].forEach(inp=>{
-  inp.addEventListener('change', ()=>{
-    const r = clamp(parseInt(rIn.value||0,10),0,255);
-    const g = clamp(parseInt(gIn.value||0,10),0,255);
-    const b = clamp(parseInt(bIn.value||0,10),0,255);
-    const hex = rgbToHex(r,g,b);
-    currentColor = hex;
-    hexInput.value = hex;
-    preview.style.background = hex;
-    setCtxForTool();
-    updateCursorPreview();
-  });
-});
+function moveCursorPreviewPosition(clientX, clientY){ const rect = canvas.getBoundingClientRect(); const cssX = clientX - rect.left; const cssY = clientY - rect.top; cursorPreview.style.left = cssX + 'px'; cursorPreview.style.top = cssY + 'px'; const displaySize = Math.max(4, parseInt(sizeInp.value,10) * (rect.width / canvas.width)); cursorPreview.style.width = displaySize + 'px'; cursorPreview.style.height = displaySize + 'px'; cursorPreview.style.border = tool==='eraser' ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.1)'; cursorPreview.style.background = (tool==='eraser') ? 'transparent' : currentColor; cursorPreview.style.opacity = (tool==='eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1); }
 
-/* initialize color fields */
-(function initColorFields(){
-  const [r,g,b] = hexToRgb(currentColor);
-  rIn.value = r; gIn.value = g; bIn.value = b;
-  hexInput.value = currentColor; preview.style.background = currentColor;
-})();
+// prevent page scroll while touching interactive areas (canvas, palette)
+document.addEventListener('touchmove', function(e){ const t = e.target; if(t && (t.closest('[data-no-scroll]') || t.closest('#paletteCanvas') || t.closest('.palette-wrap') || t.closest('.tool-btn'))){ e.preventDefault(); } }, { passive:false });
 
-/* ========== Accessibility + helper keyboard support ========== */
-document.addEventListener('keydown', (e)=>{
-  if(e.key === 'b') setActiveTool('brush');
-  if(e.key === 'p') setActiveTool('pencil');
-  if(e.key === 'm') setActiveTool('marker');
-  if(e.key === 'e') setActiveTool('eraser');
-});
+/* ---------- Clear / Download / Send ---------- */
+$('#clear').addEventListener('click', ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); status.textContent = 'Холст очищен'; flashBtn($('#clear')); });
 
-/* done */
+function downloadCanvas(){ if(canvas.toBlob){ canvas.toBlob(function(blob){ if(!blob){ status.textContent = 'Сохранение не получилось'; return; } const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'drawing.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); status.textContent = 'Скачано'; }, 'image/png'); } else { const data = canvas.toDataURL('image/png'); const a = document.createElement('a'); a.href = data; a.download = 'drawing.png'; a.click(); status.textContent = 'Скачено (fallback)'; } }
+$('#download').addEventListener('click', ()=>{ downloadCanvas(); flashBtn($('#download')); });
+
+$('#send').addEventListener('click', async ()=>{ const img = canvas.toDataURL('image/png'); const chat_id = $('#chat_id').value.trim(); if(!chat_id){ status.textContent = 'Введите chat_id'; return; } status.textContent = 'Отправка…'; try{ const res = await fetch('/upload', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ image: img, chat_id: chat_id }) }); const j = await res.json(); if(res.ok){ status.textContent = 'OK: ' + (j.status || 'sent'); } else { status.textContent = 'Ошибка: ' + JSON.stringify(j); } }catch(e){ status.textContent = 'Ошибка сети: ' + e.message; } });
+
+/* ---------- Init defaults & controls ---------- */
+ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = currentColor; ctx.lineWidth = parseInt(sizeInp.value,10); updateCursorPreview();
+[sizeInp, alphaInp].forEach(inp => inp.addEventListener('input', ()=>{ setCtxForTool(); updateCursorPreview(); }));
+
+/* ---------- Palette (draw & handlers) ---------- */
+function drawPalette(){ const w = palette.width = Math.max(160, Math.round(palette.clientWidth)); const h = palette.height = 120; const hueGrad = pctx.createLinearGradient(0,0,w,0); hueGrad.addColorStop(0,'#ff0000'); hueGrad.addColorStop(0.17,'#ffff00'); hueGrad.addColorStop(0.33,'#00ff00'); hueGrad.addColorStop(0.5,'#00ffff'); hueGrad.addColorStop(0.66,'#0000ff'); hueGrad.addColorStop(0.82,'#ff00ff'); hueGrad.addColorStop(1,'#ff0000'); pctx.fillStyle = hueGrad; pctx.fillRect(0,0,w,h); const g2 = pctx.createLinearGradient(0,0,0,h); g2.addColorStop(0,'rgba(255,255,255,1)'); g2.addColorStop(0.5,'rgba(255,255,255,0)'); g2.addColorStop(0.5,'rgba(0,0,0,0)'); g2.addColorStop(1,'rgba(0,0,0,0.6)'); pctx.fillStyle = g2; pctx.fillRect(0,0,w,h); }
+drawPalette(); window.addEventListener('resize', drawPalette);
+
+let isPalDown = false;
+function palettePointer(clientX, clientY){ const rect = palette.getBoundingClientRect(); const x = clamp(Math.round((clientX - rect.left) * (palette.width / rect.width)), 0, palette.width-1); const y = clamp(Math.round((clientY - rect.top) * (palette.height / rect.height)), 0, palette.height-1); const d = pctx.getImageData(x,y,1,1).data; const hex = rgbToHex(d[0], d[1], d[2]); currentColor = hex; hexInput.value = hex; rIn.value = d[0]; gIn.value = d[1]; bIn.value = d[2]; preview.style.background = hex; setCtxForTool(); updateCursorPreview(); }
+
+palette.addEventListener('pointerdown', (e)=>{ isPalDown = true; try{ palette.setPointerCapture(e.pointerId); }catch{} palettePointer(e.clientX, e.clientY); e.preventDefault(); });
+palette.addEventListener('pointermove', (e)=>{ if(isPalDown) palettePointer(e.clientX, e.clientY); });
+palette.addEventListener('pointerup', (e)=>{ isPalDown = false; try{ palette.releasePointerCapture(e.pointerId); }catch{} });
+palette.addEventListener('pointercancel', ()=> isPalDown = false);
+// touch fallback
+palette.addEventListener('touchstart', (e)=>{ const t = e.touches[0]; isPalDown = true; palettePointer(t.clientX, t.clientY); e.preventDefault(); }, { passive:false });
+palette.addEventListener('touchmove', (e)=>{ const t = e.touches[0]; if(isPalDown) palettePointer(t.clientX, t.clientY); e.preventDefault(); }, { passive:false });
+palette.addEventListener('touchend', (e)=>{ isPalDown = false; }, { passive:false });
+
+hexInput.addEventListener('change', ()=>{ const val = hexInput.value.trim(); const v = val.startsWith('#') ? val : ('#'+val); const [r,g,b] = hexToRgb(v); currentColor = v; preview.style.background = v; rIn.value = r; gIn.value = g; bIn.value = b; setCtxForTool(); updateCursorPreview(); });
+[rIn,gIn,bIn].forEach(inp=>{ inp.addEventListener('change', ()=>{ const r = clamp(parseInt(rIn.value||0,10),0,255); const g = clamp(parseInt(gIn.value||0,10),0,255); const b = clamp(parseInt(bIn.value||0,10),0,255); const hex = rgbToHex(r,g,b); currentColor = hex; hexInput.value = hex; preview.style.background = hex; setCtxForTool(); updateCursorPreview(); }); });
+
+/* init fields */
+(function initColorFields(){ const [r,g,b] = hexToRgb(currentColor); rIn.value = r; gIn.value = g; bIn.value = b; hexInput.value = currentColor; preview.style.background = currentColor; })();
+
+/* keyboard shortcuts */
+document.addEventListener('keydown', (e)=>{ if(e.key==='b') setActiveTool('brush'); if(e.key==='p') setActiveTool('pencil'); if(e.key==='m') setActiveTool('marker'); if(e.key==='e') setActiveTool('eraser'); });
+
 status.textContent = 'Готово — выбери инструмент и рисуй.';
 </script>
 </body>
