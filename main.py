@@ -1,6 +1,7 @@
 # main.py
 import os, base64, uuid, traceback
 from flask import Flask, request, send_from_directory, jsonify
+
 try:
     import telebot
     from telebot import types
@@ -9,7 +10,7 @@ except Exception:
     types = None
 
 TOKEN = os.getenv('TELEGRAM_TOKEN')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # например: https://telegram-draw-bot-wxuc.onrender.com
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # e.g. https://your-service.onrender.com
 app = Flask(__name__, static_folder='static')
 bot = telebot.TeleBot(TOKEN) if (telebot and TOKEN) else None
 
@@ -49,14 +50,15 @@ def upload():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Telegram POSTs updates here. We must pass the raw JSON string into de_json."""
     if not bot:
         return 'no bot token configured', 400
     try:
-        update_json = request.get_json(force=True)
-        update = telebot.types.Update.de_json(update_json)
+        raw = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(raw)
         bot.process_new_updates([update])
         return '', 200
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         return 'error', 500
 
@@ -65,17 +67,23 @@ if bot:
     @bot.message_handler(commands=['start'])
     def handle_start(message):
         chat_id = message.chat.id
-        # URL приложения с chat_id, чтобы Web App знал, кому отправлять
+        # базовый URL приложения — сначала берем WEBHOOK_URL, потом WEBAPP_URL, потом fallback
         base = WEBHOOK_URL or os.getenv('WEBAPP_URL') or ''
-        # Если WEBHOOK_URL не настроен — ставим ссылку на публичный домен, заменяй при необходимости
         if not base:
-            base = 'https://telegram-draw-bot-wxuc.onrender.com'
+            base = 'https://telegram-draw-bot-wxuc.onrender.com'  # заменяй если нужно
         url = base.rstrip('/') + f'/?chat_id={chat_id}'
+
         kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("Открыть рисовалку", url=url))
+        # Используем WebAppInfo, чтобы Telegram открыл Web App внутри клиента (если поддерживается)
+        try:
+            webapp = types.WebAppInfo(url)
+            kb.add(types.InlineKeyboardButton(text="🎨 Рисовать", web_app=webapp))
+        except Exception:
+            # запасная кнопка с обычной ссылкой
+            kb.add(types.InlineKeyboardButton("🎨 Рисовать", url=url))
         try:
             bot.send_message(chat_id, "Нажми кнопку, чтобы открыть рисовалку:", reply_markup=kb)
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
 
 # ---- start app ----
