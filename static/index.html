@@ -3,172 +3,438 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Рисовалка</title>
+<title>Рисовалка — WebApp</title>
 <style>
-  :root { --toolbar-height: auto; }
-  body { font-family: Arial, sans-serif; padding: 8px; margin:0; box-sizing: border-box; }
-  .app { max-width: 1000px; margin: 0 auto; }
-  #canvasWrap { position: relative; border: 1px solid #ccc; background: #fff; width: 100%; height: calc(100vh - 220px); max-height:700px; }
-  canvas { display:block; width:100%; height:100%; touch-action: none; -ms-touch-action: none; }
-  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
-  .controls > * { margin: 4px 0; }
-  .status { margin-left:8px; }
-  #eraserCursor { position:absolute; pointer-events:none; border:2px dashed rgba(0,0,0,0.6); border-radius:50%; transform:translate(-50%,-50%); display:none; z-index:999; }
-  @media (max-width:600px) {
-    .controls { gap:6px; }
-    #canvasWrap { height: calc(100vh - 300px); }
+  :root{
+    --gap:8px;
+    --control-height:44px;
+    --bg:#fafafa;
+  }
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior: contain;
+    touch-action: none; /* предотвращаем нежелательные жесты на холсте */
+  }
+  .wrap{
+    max-width:1100px;
+    margin:10px auto;
+    padding:10px;
+  }
+  header{ display:flex; align-items:center; gap:12px; margin-bottom:8px;}
+  h3{ margin:0; font-size:18px; }
+  #canvasWrap{
+    position:relative;
+    width:100%;
+    border:1px solid #ddd;
+    background:white;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  canvas{ display:block; width:100%; height:auto; touch-action:none; -webkit-user-select:none; user-select:none; }
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:8px;
+    align-items:center;
+  }
+  .tool-btn{
+    min-width:44px;
+    height:var(--control-height);
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid #ddd;
+    background:white;
+    display:flex;
+    gap:6px;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    font-size:14px;
+  }
+  .tool-btn.active{ outline:2px solid #6aa6ff; box-shadow:0 2px 6px rgba(100,150,255,0.15); }
+  .controls .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  label{ font-size:13px; color:#333; display:flex; gap:6px; align-items:center; }
+  input[type="range"]{ width:120px; }
+  .right{
+    display:flex; gap:8px; margin-left:auto; align-items:center;
+  }
+  #status{ font-size:13px; color:#444; min-width:160px; }
+  #cursorPreview{
+    position:absolute;
+    pointer-events:none;
+    transform:translate(-50%,-50%);
+    display:none;
+    border-radius:50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15) inset;
+    z-index:30;
+  }
+  /* mobile tweaks */
+  @media (max-width:600px){
+    header{ flex-direction:column; align-items:flex-start; gap:6px; }
+    .right{ margin-left:0; width:100%; justify-content:space-between; }
+    input[type="range"]{ width:100px; }
   }
 </style>
 </head>
 <body>
-<div class="app">
-  <h3>Мини-рисовалка</h3>
-  <div id="canvasWrap">
-    <canvas id="c"></canvas>
-    <div id="eraserCursor"></div>
+<div class="wrap">
+  <header>
+    <h3>Мини-рисовалка</h3>
+    <div style="font-size:13px;color:#666;">Инструменты: кисть, карандаш, маркер, заливка, ластик</div>
+  </header>
+
+  <div id="canvasWrap" aria-label="Рисовальный холст">
+    <canvas id="c" width="800" height="500"></canvas>
+    <div id="cursorPreview"></div>
   </div>
 
-  <div class="controls" id="controls">
-    <label>Цвет: <input type="color" id="color" value="#000000"></label>
-    <label>Толщина: <input id="size" type="range" min="1" max="100" value="5"></label>
-    <label>Непрозрачность: <input id="alpha" type="range" min="0.1" max="1" step="0.1" value="1"></label>
-    <button id="brush">Кисть</button>
-    <button id="eraser">Ластик</button>
-    <button id="clear">Очистить</button>
-    <button id="download">Скачать PNG</button>
+  <div class="controls" style="margin-top:10px;">
+    <div class="row">
+      <button class="tool-btn active" data-tool="brush" id="tool_brush">🖌️ Кисть</button>
+      <button class="tool-btn" data-tool="pencil" id="tool_pencil">✏️ Карандаш</button>
+      <button class="tool-btn" data-tool="marker" id="tool_marker">🖍️ Маркер</button>
+      <button class="tool-btn" data-tool="fill" id="tool_fill">🪣 Заливка</button>
+      <button class="tool-btn" data-tool="eraser" id="tool_eraser">🧽 Ластик</button>
+    </div>
+
+    <div class="row" style="align-items:center;">
+      <label>Цвет: <input type="color" id="color" value="#000000"></label>
+      <label>Размер: <input id="size" type="range" min="1" max="120" value="8"></label>
+      <label>Непрозр.: <input id="alpha" type="range" min="0.05" max="1" step="0.05" value="1"></label>
+    </div>
+
+    <div class="right">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="tool-btn" id="clear">Очистить</button>
+        <button class="tool-btn" id="download">Скачать PNG</button>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        Telegram chat_id: <input id="chat_id" placeholder="123456789" style="width:110px; padding:6px; border-radius:6px; border:1px solid #ddd;">
+        <button class="tool-btn" id="send">Отправить в чат</button>
+      </div>
+    </div>
   </div>
 
-  <div style="margin-top:8px;">
-    Telegram chat_id: <input id="chat_id" placeholder="123456789">
-    <button id="send">Отправить в чат</button>
-    <span id="status" class="status"></span>
+  <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+    <div id="status">Готово</div>
   </div>
 </div>
 
 <script>
+/* ====== Utility ====== */
+function hexToRgba(hex, alpha=1){
+  if(hex.startsWith('#')) hex = hex.slice(1);
+  if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+  const num = parseInt(hex,16);
+  return [(num>>16)&255, (num>>8)&255, num&255, Math.round(alpha*255)];
+}
+function rgbaArrayToCss(arr){
+  return `rgba(${arr[0]},${arr[1]},${arr[2]},${(arr[3]/255).toFixed(2)})`;
+}
+function setActiveToolBtn(tool){
+  document.querySelectorAll('.tool-btn').forEach(b=>b.classList.toggle('active', b.dataset.tool===tool));
+}
+
+/* ====== Canvas init & resize (preserve content) ====== */
 const canvas = document.getElementById('c');
 const wrap = document.getElementById('canvasWrap');
-const ctx = canvas.getContext('2d');
-const dpr = window.devicePixelRatio || 1;
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+function fitCanvasToContainer(){
+  // preserve image
+  const oldW = canvas.width, oldH = canvas.height;
+  const temp = document.createElement('canvas');
+  temp.width = oldW; temp.height = oldH;
+  temp.getContext('2d').drawImage(canvas,0,0);
+
+  const newW = Math.max(300, Math.min(1200, Math.round(wrap.clientWidth)));
+  const aspect = oldH/oldW;
+  const newH = Math.round(newW * aspect);
+
+  canvas.width = newW; canvas.height = newH;
+  // draw scaled content
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(temp, 0,0, temp.width, temp.height, 0,0, canvas.width, canvas.height);
+  updateCursorPreview();
+}
+window.addEventListener('resize', () => { fitCanvasToContainer(); });
+fitCanvasToContainer();
+
+/* ====== State ====== */
+let tool = 'brush';
 let drawing = false;
-let mode = 'brush';
+let last = {x:0,y:0};
+let pointerId = null;
 const colorInp = document.getElementById('color');
 const sizeInp = document.getElementById('size');
 const alphaInp = document.getElementById('alpha');
 const status = document.getElementById('status');
-const eraserCursor = document.getElementById('eraserCursor');
+const cursorPreview = document.getElementById('cursorPreview');
 
-function resizeAndPreserve() {
-  // Сохраняем текущее содержимое
-  const temp = document.createElement('canvas');
-  temp.width = canvas.width;
-  temp.height = canvas.height;
-  temp.getContext('2d').drawImage(canvas, 0, 0);
-
-  // Устанавливаем новые пиксельные размеры под текущий wrap
-  const rect = wrap.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.lineCap = 'round';
-  // Восстанавливаем изображение (масштабируется автоматически)
-  ctx.drawImage(temp, 0, 0, temp.width / dpr, temp.height / dpr, 0, 0, canvas.width / dpr, canvas.height / dpr);
+/* ====== Cursor preview for brush/eraser ====== */
+function updateCursorPreview(){
+  const sz = parseInt(sizeInp.value,10);
+  const alpha = parseFloat(alphaInp.value);
+  const color = colorInp.value;
+  cursorPreview.style.width = sz + 'px';
+  cursorPreview.style.height = sz + 'px';
+  cursorPreview.style.borderRadius = '50%';
+  cursorPreview.style.display = 'none';
+  cursorPreview.style.boxSizing = 'border-box';
+  cursorPreview.style.background = (tool==='eraser') ? 'transparent' : color;
+  cursorPreview.style.opacity = (tool==='eraser') ? '0.15' : alpha;
+  cursorPreview.style.border = '1px solid rgba(0,0,0,0.15)';
 }
-window.addEventListener('resize', resizeAndPreserve);
-resizeAndPreserve();
+updateCursorPreview();
 
-function getPos(e) {
+/* ====== Tool buttons ====== */
+document.querySelectorAll('.tool-btn[data-tool]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    tool = btn.dataset.tool;
+    setActiveToolBtn(tool);
+    updateCursorPreview();
+  });
+});
+
+/* ====== Drawing helpers ====== */
+function getCanvasPos(e){
   const rect = canvas.getBoundingClientRect();
-  const clientX = (e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] && e.touches[0].clientX));
-  const clientY = (e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] && e.touches[0].clientY));
-  const x = (clientX - rect.left) * (canvas.width / rect.width) / dpr;
-  const y = (clientY - rect.top) * (canvas.height / rect.height) / dpr;
-  return { x, y };
+  return {
+    x: Math.round((e.clientX - rect.left) * (canvas.width / rect.width)),
+    y: Math.round((e.clientY - rect.top) * (canvas.height / rect.height))
+  };
 }
 
-function setBrushMode() {
-  mode = 'brush';
-  ctx.globalCompositeOperation = 'source-over';
-  eraserCursor.style.display = 'none';
-}
-function setEraserMode() {
-  mode = 'eraser';
-  ctx.globalCompositeOperation = 'destination-out';
-  eraserCursor.style.display = 'block';
+function setCtxForTool(){
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
+  ctx.globalAlpha = parseFloat(alphaInp.value);
 }
 
-canvas.addEventListener('pointerdown', (e) => {
+function drawLine(x1,y1,x2,y2){
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+}
+
+/* Pencil — textured: many tiny semi-transparent short strokes with jitter */
+function drawPencilStroke(x1,y1,x2,y2){
+  const pencilAlpha = Math.max(0.15, parseFloat(alphaInp.value) * 0.9);
+  const steps = Math.max(6, Math.floor(Math.hypot(x2-x1,y2-y1)/2));
+  for(let i=0;i<steps;i++){
+    const t = i/steps;
+    const cx = x1 + (x2-x1)*t + (Math.random()-0.5)*1.8;
+    const cy = y1 + (y2-y1)*t + (Math.random()-0.5)*1.8;
+    ctx.globalAlpha = pencilAlpha * (0.7 + Math.random()*0.6);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    const nx = cx + (Math.random()-0.5)*1.2;
+    const ny = cy + (Math.random()-0.5)*1.2;
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+  }
+}
+
+/* ====== Flood fill (scanline) ====== */
+function floodFill(startX, startY, fillColorRGBA){
+  try{
+    const w = canvas.width, h = canvas.height;
+    const img = ctx.getImageData(0,0,w,h);
+    const data = img.data;
+    const getIdx = (x,y)=> (y*w + x)*4;
+    const targetIdx = getIdx(startX, startY);
+    const tr = data[targetIdx], tg = data[targetIdx+1], tb = data[targetIdx+2], ta = data[targetIdx+3];
+
+    // If target color equals fill color, skip
+    if(tr===fillColorRGBA[0] && tg===fillColorRGBA[1] && tb===fillColorRGBA[2] && ta===fillColorRGBA[3]) return;
+
+    const stack = [[startX, startY]];
+    while(stack.length){
+      const [x,y] = stack.pop();
+      let nx = x;
+      // go left
+      while(nx >= 0){
+        const i = getIdx(nx,y);
+        if(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta) nx--;
+        else break;
+      }
+      nx++;
+      let spanUp = false, spanDown = false;
+      while(nx < w){
+        const i = getIdx(nx,y);
+        if(!(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta)) break;
+        // fill pixel
+        data[i] = fillColorRGBA[0];
+        data[i+1] = fillColorRGBA[1];
+        data[i+2] = fillColorRGBA[2];
+        data[i+3] = fillColorRGBA[3];
+
+        // up
+        if(y > 0){
+          const iu = getIdx(nx,y-1);
+          if(data[iu] === tr && data[iu+1] === tg && data[iu+2] === tb && data[iu+3] === ta){
+            if(!spanUp){ stack.push([nx,y-1]); spanUp = true; }
+          } else { spanUp = false; }
+        }
+        // down
+        if(y < h-1){
+          const idn = getIdx(nx,y+1);
+          if(data[idn] === tr && data[idn+1] === tg && data[idn+2] === tb && data[idn+3] === ta){
+            if(!spanDown){ stack.push([nx,y+1]); spanDown = true; }
+          } else { spanDown = false; }
+        }
+        nx++;
+      }
+    }
+    ctx.putImageData(img,0,0);
+  }catch(e){
+    console.error("fill error", e);
+  }
+}
+
+/* ====== Pointer events ====== */
+canvas.addEventListener('pointerdown', (e)=>{
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
-  drawing = true;
-  ctx.beginPath();
-  const p = getPos(e);
-  ctx.moveTo(p.x, p.y);
-  ctx.strokeStyle = colorInp.value;
-  ctx.lineWidth = sizeInp.value;
-  ctx.globalAlpha = alphaInp.value;
-});
+  pointerId = e.pointerId;
+  const pos = getCanvasPos(e);
 
-canvas.addEventListener('pointermove', (e) => {
-  if (mode === 'eraser') {
-    // позиция курсора-ластика
-    const rect = canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
-    eraserCursor.style.left = cx + 'px';
-    eraserCursor.style.top = cy + 'px';
-    eraserCursor.style.width = sizeInp.value + 'px';
-    eraserCursor.style.height = sizeInp.value + 'px';
+  if(tool === 'fill'){
+    const rgba = hexToRgba(colorInp.value, parseFloat(alphaInp.value));
+    floodFill(pos.x, pos.y, rgba);
+    status.textContent = 'Заливка применена';
+    return;
   }
-  if (!drawing) return;
-  e.preventDefault();
-  const p = getPos(e);
-  ctx.lineTo(p.x, p.y);
-  ctx.stroke();
+
+  drawing = true;
+  last.x = pos.x; last.y = pos.y;
+  setCtxForTool();
+
+  // tool-specific settings
+  const sz = parseInt(sizeInp.value,10);
+  if(tool === 'marker'){
+    ctx.lineWidth = Math.max(6, sz*1.6);
+    ctx.globalAlpha = Math.max(0.15, parseFloat(alphaInp.value) * 0.6);
+  } else if(tool === 'pencil'){
+    ctx.lineWidth = Math.max(1, Math.round(sz*0.6));
+    ctx.globalAlpha = Math.max(0.08, parseFloat(alphaInp.value) * 0.9);
+  } else {
+    ctx.lineWidth = Math.max(1, sz);
+  }
+  if(tool !== 'eraser') ctx.strokeStyle = colorInp.value;
+  else ctx.strokeStyle = 'rgba(0,0,0,1)'; // stroke color ignored in destination-out
+
+  // show preview
+  cursorPreview.style.display = 'block';
+  moveCursorPreview(e);
 });
 
-canvas.addEventListener('pointerup', (e) => {
+canvas.addEventListener('pointermove', (e)=>{
+  moveCursorPreview(e);
+  if(!drawing || e.pointerId !== pointerId) return;
   e.preventDefault();
-  try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+  const pos = getCanvasPos(e);
+  if(tool === 'pencil'){
+    drawPencilStroke(last.x,last.y,pos.x,pos.y);
+  } else {
+    // normal stroke
+    drawLine(last.x,last.y,pos.x,pos.y);
+  }
+  last.x = pos.x; last.y = pos.y;
+});
+
+canvas.addEventListener('pointerup', (e)=>{
+  if(e.pointerId === pointerId){
+    drawing = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+    pointerId = null;
+    cursorPreview.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('pointercancel', (e)=>{
   drawing = false;
+  try { canvas.releasePointerCapture(e.pointerId); } catch {}
+  pointerId = null;
+  cursorPreview.style.display = 'none';
 });
 
-canvas.addEventListener('pointercancel', () => { drawing = false; });
+/* cursor preview follow */
+function moveCursorPreview(e){
+  const rect = canvas.getBoundingClientRect();
+  const cssX = e.clientX - rect.left;
+  const cssY = e.clientY - rect.top;
+  cursorPreview.style.left = (cssX) + 'px';
+  cursorPreview.style.top = (cssY) + 'px';
+  // style size
+  const displaySize = Math.max(4, parseInt(sizeInp.value,10) * (rect.width / canvas.width));
+  cursorPreview.style.width = displaySize + 'px';
+  cursorPreview.style.height = displaySize + 'px';
+  cursorPreview.style.border = tool==='eraser' ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.1)';
+  cursorPreview.style.background = (tool==='eraser') ? 'transparent' : colorInp.value;
+  cursorPreview.style.opacity = (tool==='eraser') ? '0.18' : parseFloat(alphaInp.value);
+}
 
-document.getElementById('eraser').onclick = () => setEraserMode();
-document.getElementById('brush').onclick = () => setBrushMode();
-document.getElementById('clear').onclick = () => { ctx.clearRect(0,0,canvas.width/dpr,canvas.height/dpr); };
-document.getElementById('download').onclick = () => {
+/* Prevent page scroll while touching canvas (but allow pinch zoom on some clients) */
+document.addEventListener('touchmove', function(e){
+  if(e.target === canvas || canvas.contains(e.target)){
+    e.preventDefault();
+  }
+}, { passive:false });
+
+/* ====== Buttons: clear, download, send ====== */
+document.getElementById('clear').addEventListener('click', ()=>{
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  status.textContent = 'Холст очищен';
+});
+
+document.getElementById('download').addEventListener('click', ()=>{
   const data = canvas.toDataURL('image/png');
   const a = document.createElement('a');
   a.href = data;
   a.download = 'drawing.png';
   a.click();
-};
+});
 
-document.getElementById('send').onclick = async () => {
+document.getElementById('send').addEventListener('click', async ()=>{
   const img = canvas.toDataURL('image/png');
   const chat_id = document.getElementById('chat_id').value.trim();
   status.textContent = 'Отправка…';
-  try {
+  try{
     const res = await fetch('/upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ image: img, chat_id: chat_id || undefined })
     });
     const j = await res.json();
-    if (res.ok) status.textContent = 'OK: ' + (j.status || JSON.stringify(j));
-    else status.textContent = 'Ошибка: ' + JSON.stringify(j);
-  } catch (e) {
+    if(res.ok){ status.textContent = 'OK: ' + (j.status || 'sent'); }
+    else { status.textContent = 'Ошибка: ' + JSON.stringify(j); }
+  }catch(e){
     status.textContent = 'Ошибка сети: ' + e.message;
   }
-};
+});
 
-// Инициализируем режим по умолчанию
-setBrushMode();
+/* init default style */
+ctx.lineJoin = 'round';
+ctx.lineCap = 'round';
+ctx.strokeStyle = colorInp.value;
+ctx.lineWidth = parseInt(sizeInp.value,10);
+
+/* Update preview when controls change */
+[colorInp,sizeInp,alphaInp].forEach(inp=>inp.addEventListener('input', ()=> {
+  setCtxForTool();
+  updateCursorPreview();
+}));
+
+// initial instruction
+status.textContent = 'Готово — выбери инструмент и рисуй.';
 </script>
 </body>
 </html>
