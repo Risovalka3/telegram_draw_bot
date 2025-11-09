@@ -9,8 +9,14 @@
   html,body{ height:100%; margin:0; background:var(--bg); font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto; -webkit-font-smoothing:antialiased; }
   .wrap{ max-width:940px; margin:10px auto; padding:10px; box-sizing:border-box; }
   header{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+
+  /* canvas stack */
   #canvasWrap{ position:relative; width:100%; border:1px solid #ddd; background:white; border-radius:8px; overflow:hidden; touch-action:none; }
-  canvas{ display:block; width:100%; height:auto; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; background:transparent; }
+  .layer{ position:absolute; left:0; top:0; width:100%; height:100%; display:block; }
+  #interaction{ position:absolute; left:0; top:0; width:100%; height:100%; z-index:50; }
+
+  canvas{ display:block; width:100%; height:100%; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; background:transparent; }
+
   .controls{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; }
   .tool-btn{ min-width:44px; height:44px; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:white; display:flex; gap:6px; align-items:center; justify-content:center; cursor:pointer; font-size:14px; user-select:none; }
   .tool-btn:focus{ outline: none; }
@@ -21,10 +27,18 @@
   .right{ display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
   #status{ font-size:13px; color:var(--muted); min-width:120px; }
   #cursorPreview{ position:absolute; pointer-events:none; transform:translate(-50%,-50%); display:none; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset; z-index:40; }
+
   .palette-wrap{ display:flex; gap:12px; align-items:flex-start; margin-top:12px; flex-wrap:wrap; }
   #paletteCanvas{ width:160px; height:120px; border-radius:6px; border:1px solid #ddd; touch-action:none; }
   .color-controls{ display:flex; flex-direction:column; gap:6px; font-size:13px; }
   .rgb-row{ display:flex; gap:6px; align-items:center; }
+
+  /* layer list */
+  .layers-row{ display:flex; gap:8px; align-items:center; }
+  .layer-btn{ padding:6px 8px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+  .layer-btn.active{ background:#eef6ff; outline:2px solid var(--accent); }
+  .small{ font-size:12px; padding:4px 8px; }
+
   @media (max-width:800px){ .controls{ gap:6px; } .right{ margin-left:0; width:100%; justify-content:space-between; } input[type="range"]{ width:140px; } .palette-wrap{ gap:8px; } }
   .flash { transition: box-shadow .12s, outline .12s; }
 </style>
@@ -33,11 +47,18 @@
 <div class="wrap">
   <header>
     <h3>🎨 Мини-рисовалка</h3>
-    <div style="font-size:13px;color:var(--muted);">Инструменты: кисть, карандаш, маркер, заливка, ластик — адаптировано под мобильные.</div>
+    <div style="font-size:13px;color:var(--muted);">Инструменты: кисть, карандаш, маркер, заливка, ластик — адаптировано под мобильные. Есть 5 слоёв, Undo/Redo.</div>
   </header>
 
   <div id="canvasWrap" aria-label="Рисовальный холст" data-no-scroll>
-    <canvas id="c" width="800" height="800" aria-label="Холст"></canvas>
+    <!-- 5 layers stacked -->
+    <canvas id="layer0" class="layer" width="800" height="800" aria-label="Слой 1"></canvas>
+    <canvas id="layer1" class="layer" width="800" height="800" aria-label="Слой 2"></canvas>
+    <canvas id="layer2" class="layer" width="800" height="800" aria-label="Слой 3"></canvas>
+    <canvas id="layer3" class="layer" width="800" height="800" aria-label="Слой 4"></canvas>
+    <canvas id="layer4" class="layer" width="800" height="800" aria-label="Слой 5"></canvas>
+    <!-- interaction canvas captures pointer input and is not drawn to directly -->
+    <canvas id="interaction" class="layer" width="800" height="800" aria-hidden="true"></canvas>
     <div id="cursorPreview" aria-hidden="true"></div>
   </div>
 
@@ -53,6 +74,13 @@
     <div class="row" style="align-items:center;">
       <label style="white-space:nowrap;">Размер: <input id="size" type="range" min="1" max="120" value="8"></label>
       <label style="white-space:nowrap;">Непрозр.: <input id="alpha" type="range" min="0.05" max="1" step="0.05" value="1"></label>
+    </div>
+
+    <div class="layers-row">
+      <!-- layer buttons -->
+      <div id="layerButtons"></div>
+      <button class="tool-btn small" id="undo">↶ Undo</button>
+      <button class="tool-btn small" id="redo">↷ Redo</button>
     </div>
 
     <div class="right">
@@ -100,8 +128,11 @@ function flashBtn(btn){ if(!btn) return; btn.classList.add('flash'); setTimeout(
 
 /* ---------- Elements & state ---------- */
 const canvasWrap = $('#canvasWrap');
-const canvas = $('#c');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const interaction = $('#interaction');
+const layerIds = ['layer0','layer1','layer2','layer3','layer4'];
+const layers = layerIds.map(id => document.getElementById(id));
+const ctxs = layers.map(l => l.getContext('2d', { willReadFrequently: true }));
+const interactionCtx = interaction.getContext('2d');
 const cursorPreview = $('#cursorPreview');
 const palette = $('#paletteCanvas');
 const pctx = palette.getContext('2d');
@@ -111,177 +142,172 @@ const rIn = $('#r'), gIn = $('#g'), bIn = $('#b');
 const sizeInp = $('#size'), alphaInp = $('#alpha');
 const status = $('#status');
 
+let activeLayer = 0; // index 0..4
 let tool = 'brush';
 let drawing = false;
 let last = {x:0,y:0};
 let pointerId = null;
 let currentColor = '#000000';
 
-/* ---------- Canvas sizing (square) ---------- */
-function fitCanvas(){
-  const w = Math.max(280, Math.min(1100, Math.round(canvasWrap.clientWidth)));
-  // preserve content
-  const tmp = document.createElement('canvas');
-  tmp.width = canvas.width; tmp.height = canvas.height;
-  tmp.getContext('2d').drawImage(canvas,0,0);
-  canvas.width = w; canvas.height = w;
-  canvas.style.width = '100%';
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(tmp, 0,0, tmp.width, tmp.height, 0,0, canvas.width, canvas.height);
-  updateCursorPreview();
+// Per-layer history stacks (dataURLs). Keep reasonable limit.
+const history = Array.from({length:5}, ()=>({undos: [], redos: []}));
+const HISTORY_LIMIT = 40;
+
+/* ---------- Layer UI ---------- */
+const layerButtonsContainer = $('#layerButtons');
+function buildLayerButtons(){
+  layerButtonsContainer.innerHTML = '';
+  for(let i=4;i>=0;i--){ // show top layer first
+    const btn = document.createElement('button');
+    btn.className = 'layer-btn';
+    btn.textContent = `L${i+1}`;
+    btn.dataset.idx = i;
+    btn.addEventListener('click', ()=>{
+      flashBtn(btn);
+      setActiveLayer(parseInt(btn.dataset.idx));
+    });
+    // visibility toggle
+    const eye = document.createElement('button');
+    eye.className = 'layer-btn small';
+    eye.textContent = '👁️';
+    eye.dataset.idx = i;
+    eye.addEventListener('click', (ev)=>{ ev.stopPropagation(); const idx = parseInt(eye.dataset.idx); const vis = layers[idx].style.display !== 'none'; layers[idx].style.display = vis ? 'none' : 'block'; flashBtn(eye); });
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'flex'; wrapper.style.gap='6px'; wrapper.style.alignItems='center';
+    wrapper.appendChild(btn); wrapper.appendChild(eye);
+    layerButtonsContainer.appendChild(wrapper);
+  }
 }
-window.addEventListener('resize', fitCanvas);
-fitCanvas();
+buildLayerButtons();
+function setActiveLayer(idx){ activeLayer = idx; // highlight correct btn
+  $$('.layer-btn').forEach(b=> b.classList.toggle('active', parseInt(b.dataset.idx)===idx));
+  status.textContent = `Слой ${idx+1}`;
+}
+setActiveLayer(0);
+
+/* ---------- Canvas sizing (square) ---------- */
+function fitAll(){
+  const w = Math.max(280, Math.min(1100, Math.round(canvasWrap.clientWidth)));
+  layers.forEach((lv)=>{
+    const tmp = document.createElement('canvas'); tmp.width = lv.width; tmp.height = lv.height; tmp.getContext('2d').drawImage(lv,0,0);
+    lv.width = w; lv.height = w; lv.style.width = '100%';
+    lv.getContext('2d').clearRect(0,0,lv.width,lv.height);
+    lv.getContext('2d').drawImage(tmp,0,0,tmp.width,tmp.height,0,0,lv.width,lv.height);
+  });
+  // interaction canvas
+  const ttmp = document.createElement('canvas'); ttmp.width = interaction.width; ttmp.height = interaction.height; ttmp.getContext('2d').drawImage(interaction,0,0);
+  interaction.width = w; interaction.height = w; interaction.style.width = '100%';
+  interaction.getContext('2d').clearRect(0,0,interaction.width,interaction.height);
+}
+window.addEventListener('resize', fitAll);
+fitAll();
 
 /* ---------- Cursor preview ---------- */
 function updateCursorPreview(){
   const sz = Math.max(4, parseInt(sizeInp.value,10) || 8);
-  cursorPreview.style.width = sz + 'px';
-  cursorPreview.style.height = sz + 'px';
-  cursorPreview.style.borderRadius = '50%';
-  cursorPreview.style.display = 'none';
-  cursorPreview.style.boxSizing = 'border-box';
-  cursorPreview.style.background = (tool === 'eraser') ? 'transparent' : currentColor;
-  cursorPreview.style.opacity = (tool === 'eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1);
-  cursorPreview.style.border = (tool === 'eraser') ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.08)';
-}
+  cursorPreview.style.width = sz + 'px'; cursorPreview.style.height = sz + 'px'; cursorPreview.style.borderRadius = '50%'; cursorPreview.style.display = 'none'; cursorPreview.style.boxSizing = 'border-box'; cursorPreview.style.background = (tool === 'eraser') ? 'transparent' : currentColor; cursorPreview.style.opacity = (tool === 'eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1); cursorPreview.style.border = (tool === 'eraser') ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.08)'; }
 updateCursorPreview();
 
-/* ---------- Tools ---------- */
-function setActiveTool(t){
-  tool = t;
-  $$('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
-  updateCursorPreview();
-  status.textContent = `Инструмент: ${t}`;
+/* ---------- Tool handling ---------- */
+function setActiveTool(t){ tool = t; $$('.tool-btn').forEach(b=>b.classList.toggle('active', b.dataset.tool===t)); updateCursorPreview(); status.textContent = `Инструмент: ${t}`; }
+$$('.tool-btn[data-tool]').forEach(btn=> btn.addEventListener('click', ()=>{ flashBtn(btn); setActiveTool(btn.dataset.tool); }));
+
+/* ---------- History (undo/redo) ---------- */
+function pushHistory(layerIdx){ try{
+  const data = layers[layerIdx].toDataURL();
+  history[layerIdx].undos.push(data);
+  if(history[layerIdx].undos.length>HISTORY_LIMIT) history[layerIdx].undos.shift();
+  history[layerIdx].redos = []; // clear redo on new action
+} catch(e){ console.error('pushHistory', e); }}
+function restoreDataURLToLayer(layerIdx, dataURL){ const img = new Image(); img.onload = ()=>{ const c = layers[layerIdx].getContext('2d'); c.clearRect(0,0,layers[layerIdx].width,layers[layerIdx].height); c.drawImage(img,0,0,layers[layerIdx].width,layers[layerIdx].height); }; img.src = dataURL; }
+function undo(){ const h = history[activeLayer]; if(!h || h.undos.length===0) return; const last = h.undos.pop(); h.redos.push(last); const prev = h.undos[h.undos.length-1] || null; if(prev){ restoreDataURLToLayer(activeLayer, prev); } else { // clear layer
+  ctxs[activeLayer].clearRect(0,0,layers[activeLayer].width,layers[activeLayer].height);
+ }
+ flashBtn($('#undo'));
 }
-$$('.tool-btn[data-tool]').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    // flash feedback for quick click
-    flashBtn(btn);
-    setActiveTool(btn.dataset.tool);
-  });
-});
+function redo(){ const h = history[activeLayer]; if(!h || h.redos.length===0) return; const next = h.redos.pop(); h.undos.push(next); restoreDataURLToLayer(activeLayer, next); flashBtn($('#redo')); }
+$('#undo').addEventListener('click', ()=>{ undo(); });
+$('#redo').addEventListener('click', ()=>{ redo(); });
 
-/* ---------- Drawing helpers ---------- */
-function getCanvasPosFromClient(clientX, clientY){
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: Math.round((clientX - rect.left) * (canvas.width / rect.width)),
-    y: Math.round((clientY - rect.top) * (canvas.height / rect.height))
-  };
+/* ---------- Drawing helpers (draw to active layer ctx) ---------- */
+function getCanvasPosFromClient(clientX, clientY){ const rect = interaction.getBoundingClientRect(); return { x: Math.round((clientX - rect.left) * (interaction.width / rect.width)), y: Math.round((clientY - rect.top) * (interaction.height / rect.height)) }; }
+function setCtxForToolForLayer(layerIdx){ const ctx = ctxs[layerIdx]; ctx.setTransform(1,0,0,1,0,0); ctx.lineJoin='round'; ctx.lineCap='round'; ctx.globalCompositeOperation = (tool==='eraser')?'destination-out':'source-over'; if(tool==='marker'){ ctx.lineWidth = Math.max(6, parseInt(sizeInp.value,10)*1.6); ctx.globalAlpha = Math.max(0.12, parseFloat(alphaInp.value)*0.6); } else if(tool==='pencil'){ ctx.lineWidth = Math.max(1, Math.round(parseInt(sizeInp.value,10)*0.6)); ctx.globalAlpha = Math.max(0.08, parseFloat(alphaInp.value)*0.95); } else { ctx.lineWidth = Math.max(1, parseInt(sizeInp.value,10)); ctx.globalAlpha = parseFloat(alphaInp.value); } ctx.strokeStyle = (tool==='eraser')?'rgba(0,0,0,1)':currentColor; }
+function drawLineOnLayer(layerIdx,x1,y1,x2,y2){ const c = ctxs[layerIdx]; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke(); }
+function drawPencilOnLayer(layerIdx,x1,y1,x2,y2){ const c = ctxs[layerIdx]; const pencilAlpha = Math.max(0.15, parseFloat(alphaInp.value)*0.9); const steps = Math.max(6, Math.floor(Math.hypot(x2-x1,y2-y1)/2)); for(let i=0;i<steps;i++){ const t=i/steps; const cx = x1 + (x2-x1)*t + (Math.random()-0.5)*1.8; const cy = y1 + (y2-y1)*t + (Math.random()-0.5)*1.8; c.globalAlpha = pencilAlpha * (0.7 + Math.random()*0.6); c.beginPath(); c.moveTo(cx,cy); const nx = cx + (Math.random()-0.5)*1.2; const ny = cy + (Math.random()-0.5)*1.2; c.lineTo(nx,ny); c.stroke(); } }
+
+/* flood fill same as before but operates on active layer */
+function floodFillLayer(layerIdx,startX,startY,fillRGBA){ try{ const layer = layers[layerIdx]; const c = ctxs[layerIdx]; const w=layer.width,h=layer.height; const img = c.getImageData(0,0,w,h); const data = img.data; const getIdx=(x,y)=>(y*w+x)*4; const t=getIdx(startX,startY); const tr=data[t],tg=data[t+1],tb=data[t+2],ta=data[t+3]; if(tr===fillRGBA[0]&&tg===fillRGBA[1]&&tb===fillRGBA[2]&&ta===fillRGBA[3]) return; const stack=[[startX,startY]]; while(stack.length){ const [x,y]=stack.pop(); let nx=x; while(nx>=0){ const i=getIdx(nx,y); if(data[i]===tr&&data[i+1]===tg&&data[i+2]===tb&&data[i+3]===ta) nx--; else break; } nx++; let spanUp=false, spanDown=false; while(nx<w){ const i=getIdx(nx,y); if(!(data[i]===tr&&data[i+1]===tg&&data[i+2]===tb&&data[i+3]===ta)) break; data[i]=fillRGBA[0]; data[i+1]=fillRGBA[1]; data[i+2]=fillRGBA[2]; data[i+3]=fillRGBA[3]; if(y>0){ const iu=getIdx(nx,y-1); if(data[iu]===tr&&data[iu+1]===tg&&data[iu+2]===tb&&data[iu+3]===ta){ if(!spanUp){ stack.push([nx,y-1]); spanUp=true; } } else spanUp=false; } if(y<h-1){ const idn=getIdx(nx,y+1); if(data[idn]===tr&&data[idn+1]===tg&&data[idn+2]===tb&&data[idn+3]===ta){ if(!spanDown){ stack.push([nx,y+1]); spanDown=true; } } else spanDown=false; } nx++; } } c.putImageData(img,0,0); }catch(e){ console.error('fill error',e); } }
+
+/* ---------- Pointer / touch handling on interaction canvas ---------- */
+function onPointerDown(clientX, clientY, pId){ const pos = getCanvasPosFromClient(clientX, clientY); if(tool==='fill'){ const rgba = hexToRgb(currentColor); rgba.push(Math.round(parseFloat(alphaInp.value)*255)); // push history before change
+  pushHistory(activeLayer); floodFillLayer(activeLayer,pos.x,pos.y,rgba); status.textContent='Заливка применена'; return; }
+  // start drawing
+  drawing=true; last.x=pos.x; last.y=pos.y; pointerId=pId; // prepare ctx
+  setCtxForToolForLayer(activeLayer); // ensure tiny dot on tap
+  const cctx = ctxs[activeLayer]; cctx.beginPath(); cctx.moveTo(last.x,last.y); cctx.lineTo(last.x+0.01,last.y+0.01); cctx.stroke(); cursorPreview.style.display='block'; moveCursorPreviewPosition(clientX,clientY);
 }
+function onPointerMove(clientX, clientY, pId){ moveCursorPreviewPosition(clientX,clientY); if(!drawing) return; if(pointerId!==null && pId!==pointerId) return; const pos = getCanvasPosFromClient(clientX, clientY); if(tool==='pencil') drawPencilOnLayer(activeLayer,last.x,last.y,pos.x,pos.y); else drawLineOnLayer(activeLayer,last.x,last.y,pos.x,pos.y); last.x=pos.x; last.y=pos.y; }
+function onPointerUp(clientX, clientY, pId){ if(drawing){ // push history snapshot
+    try{ pushHistory(activeLayer); }catch(e){console.warn(e);} }
+  drawing=false; pointerId=null; cursorPreview.style.display='none'; }
 
-function setCtxForTool(){
-  ctx.setTransform(1,0,0,1,0,0); // reset transform
-  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  ctx.globalCompositeOperation = (tool === 'eraser') ? 'destination-out' : 'source-over';
-  if(tool === 'marker'){
-    ctx.lineWidth = Math.max(6, parseInt(sizeInp.value,10) * 1.6);
-    ctx.globalAlpha = Math.max(0.12, parseFloat(alphaInp.value) * 0.6);
-  } else if(tool === 'pencil'){
-    ctx.lineWidth = Math.max(1, Math.round(parseInt(sizeInp.value,10) * 0.6));
-    ctx.globalAlpha = Math.max(0.08, parseFloat(alphaInp.value) * 0.95);
-  } else {
-    ctx.lineWidth = Math.max(1, parseInt(sizeInp.value,10));
-    ctx.globalAlpha = parseFloat(alphaInp.value);
-  }
-  ctx.strokeStyle = (tool === 'eraser') ? 'rgba(0,0,0,1)' : currentColor;
-}
-
-function drawPencilStroke(x1,y1,x2,y2){
-  const pencilAlpha = Math.max(0.15, parseFloat(alphaInp.value) * 0.9);
-  const steps = Math.max(6, Math.floor(Math.hypot(x2-x1,y2-y1)/2));
-  for(let i=0;i<steps;i++){
-    const t = i/steps;
-    const cx = x1 + (x2-x1)*t + (Math.random()-0.5)*1.8;
-    const cy = y1 + (y2-y1)*t + (Math.random()-0.5)*1.8;
-    ctx.globalAlpha = pencilAlpha * (0.7 + Math.random()*0.6);
-    ctx.beginPath(); ctx.moveTo(cx, cy);
-    const nx = cx + (Math.random()-0.5)*1.2; const ny = cy + (Math.random()-0.5)*1.2;
-    ctx.lineTo(nx, ny); ctx.stroke();
-  }
-}
-
-function drawLine(x1,y1,x2,y2){ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
-
-/* flood fill (scanline) */
-function floodFill(startX, startY, fillRGBA){ try{ const w = canvas.width, h = canvas.height; const img = ctx.getImageData(0,0,w,h); const data = img.data; const getIdx = (x,y)=> (y*w + x)*4; const t = getIdx(startX,startY); const tr = data[t], tg = data[t+1], tb = data[t+2], ta = data[t+3]; if(tr===fillRGBA[0] && tg===fillRGBA[1] && tb===fillRGBA[2] && ta===fillRGBA[3]) return; const stack = [[startX,startY]]; while(stack.length){ const [x,y] = stack.pop(); let nx = x; while(nx >= 0){ const i = getIdx(nx,y); if(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta) nx--; else break; } nx++; let spanUp=false, spanDown=false; while(nx < w){ const i = getIdx(nx,y); if(!(data[i] === tr && data[i+1] === tg && data[i+2] === tb && data[i+3] === ta)) break; data[i]=fillRGBA[0]; data[i+1]=fillRGBA[1]; data[i+2]=fillRGBA[2]; data[i+3]=fillRGBA[3]; if(y>0){ const iu = getIdx(nx,y-1); if(data[iu] === tr && data[iu+1] === tg && data[iu+2] === tb && data[iu+3] === ta){ if(!spanUp){ stack.push([nx,y-1]); spanUp=true; } } else spanUp=false; } if(y<h-1){ const idn = getIdx(nx,y+1); if(data[idn] === tr && data[idn+1] === tg && data[idn+2] === tb && data[idn+3] === ta){ if(!spanDown){ stack.push([nx,y+1]); spanDown=true; } } else spanDown=false; } nx++; } } ctx.putImageData(img,0,0); }catch(e){ console.error("fill error", e); } }
-
-/* ---------- Pointer handling ---------- */
-function onPointerDown(clientX, clientY, pId){
-  const pos = getCanvasPosFromClient(clientX, clientY);
-  if(tool === 'fill'){
-    const rgba = hexToRgb(currentColor); rgba.push(Math.round(parseFloat(alphaInp.value)*255)); floodFill(pos.x, pos.y, rgba); status.textContent = 'Заливка применена'; return;
-  }
-  drawing = true; last.x = pos.x; last.y = pos.y; pointerId = pId; setCtxForTool();
-  // ensure there's a visible dot if user taps without moving
-  ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(last.x+0.01,last.y+0.01); ctx.stroke();
-  cursorPreview.style.display = 'block'; moveCursorPreviewPosition(clientX, clientY);
-}
-
-function onPointerMove(clientX, clientY, pId){
-  moveCursorPreviewPosition(clientX, clientY);
-  if(!drawing) return; if(pointerId !== null && pId !== pointerId) return;
-  const pos = getCanvasPosFromClient(clientX, clientY);
-  if(tool === 'pencil') drawPencilStroke(last.x,last.y,pos.x,pos.y); else drawLine(last.x,last.y,pos.x,pos.y);
-  last.x = pos.x; last.y = pos.y;
-}
-
-function onPointerUp(clientX, clientY, pId){ drawing = false; pointerId = null; cursorPreview.style.display = 'none'; }
-
-canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); try{ canvas.setPointerCapture(e.pointerId); }catch{} onPointerDown(e.clientX, e.clientY, e.pointerId); });
-canvas.addEventListener('pointermove', (e)=>{ onPointerMove(e.clientX, e.clientY, e.pointerId); });
-canvas.addEventListener('pointerup', (e)=>{ try{ canvas.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX, e.clientY, e.pointerId); });
-canvas.addEventListener('pointercancel', (e)=>{ try{ canvas.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX, e.clientY, e.pointerId); });
-
+// attach events to interaction canvas
+interaction.addEventListener('pointerdown', (e)=>{ e.preventDefault(); try{ interaction.setPointerCapture(e.pointerId); }catch{} onPointerDown(e.clientX,e.clientY,e.pointerId); });
+interaction.addEventListener('pointermove', (e)=>{ onPointerMove(e.clientX,e.clientY,e.pointerId); });
+interaction.addEventListener('pointerup', (e)=>{ try{ interaction.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX,e.clientY,e.pointerId); });
+interaction.addEventListener('pointercancel', (e)=>{ try{ interaction.releasePointerCapture(e.pointerId); }catch{} onPointerUp(e.clientX,e.clientY,e.pointerId); });
 // touch fallback
-canvas.addEventListener('touchstart', (e)=>{ const t = e.touches[0]; onPointerDown(t.clientX, t.clientY, 'touch'); e.preventDefault(); }, { passive:false });
-canvas.addEventListener('touchmove', (e)=>{ const t = e.touches[0]; onPointerMove(t.clientX, t.clientY, 'touch'); e.preventDefault(); }, { passive:false });
-canvas.addEventListener('touchend', (e)=>{ onPointerUp(0,0,'touch'); }, { passive:false });
+interaction.addEventListener('touchstart',(e)=>{ const t=e.touches[0]; onPointerDown(t.clientX,t.clientY,'touch'); e.preventDefault(); },{passive:false});
+interaction.addEventListener('touchmove',(e)=>{ const t=e.touches[0]; onPointerMove(t.clientX,t.clientY,'touch'); e.preventDefault(); },{passive:false});
+interaction.addEventListener('touchend',(e)=>{ onPointerUp(0,0,'touch'); },{passive:false});
 
-function moveCursorPreviewPosition(clientX, clientY){ const rect = canvas.getBoundingClientRect(); const cssX = clientX - rect.left; const cssY = clientY - rect.top; cursorPreview.style.left = cssX + 'px'; cursorPreview.style.top = cssY + 'px'; const displaySize = Math.max(4, parseInt(sizeInp.value,10) * (rect.width / canvas.width)); cursorPreview.style.width = displaySize + 'px'; cursorPreview.style.height = displaySize + 'px'; cursorPreview.style.border = tool==='eraser' ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.1)'; cursorPreview.style.background = (tool==='eraser') ? 'transparent' : currentColor; cursorPreview.style.opacity = (tool==='eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1); }
+function moveCursorPreviewPosition(clientX, clientY){ const rect=interaction.getBoundingClientRect(); const cssX = clientX - rect.left; const cssY = clientY - rect.top; cursorPreview.style.left = cssX + 'px'; cursorPreview.style.top = cssY + 'px'; const displaySize = Math.max(4, parseInt(sizeInp.value,10) * (rect.width / interaction.width)); cursorPreview.style.width = displaySize + 'px'; cursorPreview.style.height = displaySize + 'px'; cursorPreview.style.border = tool==='eraser' ? '1px dashed rgba(0,0,0,0.35)' : '1px solid rgba(0,0,0,0.1)'; cursorPreview.style.background = (tool==='eraser') ? 'transparent' : currentColor; cursorPreview.style.opacity = (tool==='eraser') ? '0.18' : Math.max(0.12, parseFloat(alphaInp.value) || 1); }
 
 // prevent page scroll while touching interactive areas (canvas, palette)
 document.addEventListener('touchmove', function(e){ const t = e.target; if(t && (t.closest('[data-no-scroll]') || t.closest('#paletteCanvas') || t.closest('.palette-wrap') || t.closest('.tool-btn'))){ e.preventDefault(); } }, { passive:false });
 
 /* ---------- Clear / Download / Send ---------- */
-$('#clear').addEventListener('click', ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); status.textContent = 'Холст очищен'; flashBtn($('#clear')); });
+$('#clear').addEventListener('click', ()=>{ // clear only active layer
+  pushHistory(activeLayer);
+  ctxs[activeLayer].clearRect(0,0,layers[activeLayer].width,layers[activeLayer].height);
+  status.textContent = 'Слой очищен'; flashBtn($('#clear'));
+});
 
-function downloadCanvas(){ if(canvas.toBlob){ canvas.toBlob(function(blob){ if(!blob){ status.textContent = 'Сохранение не получилось'; return; } const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'drawing.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); status.textContent = 'Скачано'; }, 'image/png'); } else { const data = canvas.toDataURL('image/png'); const a = document.createElement('a'); a.href = data; a.download = 'drawing.png'; a.click(); status.textContent = 'Скачено (fallback)'; } }
-$('#download').addEventListener('click', ()=>{ downloadCanvas(); flashBtn($('#download')); });
+function downloadComposite(){ const w = layers[0].width, h = layers[0].height; const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; const tctx = tmp.getContext('2d'); // draw layers in order
+  for(let i=0;i<layers.length;i++){ if(layers[i].style.display==='none') continue; tctx.drawImage(layers[i],0,0); }
+  if(tmp.toBlob){ tmp.toBlob((blob)=>{ const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'drawing.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); status.textContent='Скачано'; },'image/png'); } else { const data = tmp.toDataURL('image/png'); const a = document.createElement('a'); a.href = data; a.download='drawing.png'; a.click(); status.textContent='Скачено (fallback)'; } }
+$('#download').addEventListener('click', ()=>{ downloadComposite(); flashBtn($('#download')); });
 
-$('#send').addEventListener('click', async ()=>{ const img = canvas.toDataURL('image/png'); const chat_id = $('#chat_id').value.trim(); if(!chat_id){ status.textContent = 'Введите chat_id'; return; } status.textContent = 'Отправка…'; try{ const res = await fetch('/upload', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ image: img, chat_id: chat_id }) }); const j = await res.json(); if(res.ok){ status.textContent = 'OK: ' + (j.status || 'sent'); } else { status.textContent = 'Ошибка: ' + JSON.stringify(j); } }catch(e){ status.textContent = 'Ошибка сети: ' + e.message; } });
+$('#send').addEventListener('click', async ()=>{ // composite and send
+  const w = layers[0].width, h = layers[0].height; const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h; const tctx = tmp.getContext('2d'); for(let i=0;i<layers.length;i++){ if(layers[i].style.display==='none') continue; tctx.drawImage(layers[i],0,0); }
+  const img = tmp.toDataURL('image/png'); const chat_id = $('#chat_id').value.trim(); if(!chat_id){ status.textContent='Введите chat_id'; return; } status.textContent='Отправка…'; try{ const res = await fetch('/upload', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ image: img, chat_id: chat_id }) }); const j = await res.json(); if(res.ok){ status.textContent = 'OK: ' + (j.status || 'sent'); } else { status.textContent = 'Ошибка: ' + JSON.stringify(j); } }catch(e){ status.textContent = 'Ошибка сети: ' + e.message; } });
 
-/* ---------- Init defaults & controls ---------- */
-ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = currentColor; ctx.lineWidth = parseInt(sizeInp.value,10); updateCursorPreview();
-[sizeInp, alphaInp].forEach(inp => inp.addEventListener('input', ()=>{ setCtxForTool(); updateCursorPreview(); }));
-
-/* ---------- Palette (draw & handlers) ---------- */
+/* ---------- Palette ---------- */
 function drawPalette(){ const w = palette.width = Math.max(160, Math.round(palette.clientWidth)); const h = palette.height = 120; const hueGrad = pctx.createLinearGradient(0,0,w,0); hueGrad.addColorStop(0,'#ff0000'); hueGrad.addColorStop(0.17,'#ffff00'); hueGrad.addColorStop(0.33,'#00ff00'); hueGrad.addColorStop(0.5,'#00ffff'); hueGrad.addColorStop(0.66,'#0000ff'); hueGrad.addColorStop(0.82,'#ff00ff'); hueGrad.addColorStop(1,'#ff0000'); pctx.fillStyle = hueGrad; pctx.fillRect(0,0,w,h); const g2 = pctx.createLinearGradient(0,0,0,h); g2.addColorStop(0,'rgba(255,255,255,1)'); g2.addColorStop(0.5,'rgba(255,255,255,0)'); g2.addColorStop(0.5,'rgba(0,0,0,0)'); g2.addColorStop(1,'rgba(0,0,0,0.6)'); pctx.fillStyle = g2; pctx.fillRect(0,0,w,h); }
 drawPalette(); window.addEventListener('resize', drawPalette);
 
-let isPalDown = false;
-function palettePointer(clientX, clientY){ const rect = palette.getBoundingClientRect(); const x = clamp(Math.round((clientX - rect.left) * (palette.width / rect.width)), 0, palette.width-1); const y = clamp(Math.round((clientY - rect.top) * (palette.height / rect.height)), 0, palette.height-1); const d = pctx.getImageData(x,y,1,1).data; const hex = rgbToHex(d[0], d[1], d[2]); currentColor = hex; hexInput.value = hex; rIn.value = d[0]; gIn.value = d[1]; bIn.value = d[2]; preview.style.background = hex; setCtxForTool(); updateCursorPreview(); }
+let isPalDown=false; function palettePointer(clientX,clientY){ const rect=palette.getBoundingClientRect(); const x=clamp(Math.round((clientX-rect.left)*(palette.width/rect.width)),0,palette.width-1); const y=clamp(Math.round((clientY-rect.top)*(palette.height/rect.height)),0,palette.height-1); const d=pctx.getImageData(x,y,1,1).data; const hex=rgbToHex(d[0],d[1],d[2]); currentColor=hex; hexInput.value=hex; rIn.value=d[0]; gIn.value=d[1]; bIn.value=d[2]; preview.style.background=hex; setCtxForToolForLayer(activeLayer); updateCursorPreview(); }
+palette.addEventListener('pointerdown', (e)=>{ isPalDown=true; try{ palette.setPointerCapture(e.pointerId);}catch{} palettePointer(e.clientX,e.clientY); e.preventDefault(); });
+palette.addEventListener('pointermove', (e)=>{ if(isPalDown) palettePointer(e.clientX,e.clientY); });
+palette.addEventListener('pointerup', (e)=>{ isPalDown=false; try{ palette.releasePointerCapture(e.pointerId);}catch{} });
+palette.addEventListener('pointercancel', ()=> isPalDown=false);
+palette.addEventListener('touchstart',(e)=>{ const t=e.touches[0]; isPalDown=true; palettePointer(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+palette.addEventListener('touchmove',(e)=>{ const t=e.touches[0]; if(isPalDown) palettePointer(t.clientX,t.clientY); e.preventDefault(); },{passive:false});
+palette.addEventListener('touchend', (e)=>{ isPalDown=false; },{passive:false});
 
-palette.addEventListener('pointerdown', (e)=>{ isPalDown = true; try{ palette.setPointerCapture(e.pointerId); }catch{} palettePointer(e.clientX, e.clientY); e.preventDefault(); });
-palette.addEventListener('pointermove', (e)=>{ if(isPalDown) palettePointer(e.clientX, e.clientY); });
-palette.addEventListener('pointerup', (e)=>{ isPalDown = false; try{ palette.releasePointerCapture(e.pointerId); }catch{} });
-palette.addEventListener('pointercancel', ()=> isPalDown = false);
-// touch fallback
-palette.addEventListener('touchstart', (e)=>{ const t = e.touches[0]; isPalDown = true; palettePointer(t.clientX, t.clientY); e.preventDefault(); }, { passive:false });
-palette.addEventListener('touchmove', (e)=>{ const t = e.touches[0]; if(isPalDown) palettePointer(t.clientX, t.clientY); e.preventDefault(); }, { passive:false });
-palette.addEventListener('touchend', (e)=>{ isPalDown = false; }, { passive:false });
+hexInput.addEventListener('change', ()=>{ const val=hexInput.value.trim(); const v=val.startsWith('#')?val:'#'+val; const [r,g,b]=hexToRgb(v); currentColor=v; preview.style.background=v; rIn.value=r; gIn.value=g; bIn.value=b; setCtxForToolForLayer(activeLayer); updateCursorPreview(); });
+[rIn,gIn,bIn].forEach(inp=>inp.addEventListener('change', ()=>{ const r=clamp(parseInt(rIn.value||0,10),0,255); const g=clamp(parseInt(gIn.value||0,10),0,255); const b=clamp(parseInt(bIn.value||0,10),0,255); const hex=rgbToHex(r,g,b); currentColor=hex; hexInput.value=hex; preview.style.background=hex; setCtxForToolForLayer(activeLayer); updateCursorPreview(); }));
 
-hexInput.addEventListener('change', ()=>{ const val = hexInput.value.trim(); const v = val.startsWith('#') ? val : ('#'+val); const [r,g,b] = hexToRgb(v); currentColor = v; preview.style.background = v; rIn.value = r; gIn.value = g; bIn.value = b; setCtxForTool(); updateCursorPreview(); });
-[rIn,gIn,bIn].forEach(inp=>{ inp.addEventListener('change', ()=>{ const r = clamp(parseInt(rIn.value||0,10),0,255); const g = clamp(parseInt(gIn.value||0,10),0,255); const b = clamp(parseInt(bIn.value||0,10),0,255); const hex = rgbToHex(r,g,b); currentColor = hex; hexInput.value = hex; preview.style.background = hex; setCtxForTool(); updateCursorPreview(); }); });
+/* init */
+(function initColorFields(){ const [r,g,b]=hexToRgb(currentColor); rIn.value=r; gIn.value=g; bIn.value=b; hexInput.value=currentColor; preview.style.background=currentColor; })();
 
-/* init fields */
-(function initColorFields(){ const [r,g,b] = hexToRgb(currentColor); rIn.value = r; gIn.value = g; bIn.value = b; hexInput.value = currentColor; preview.style.background = currentColor; })();
+/* keyboard */
+document.addEventListener('keydown',(e)=>{ if(e.key==='b') setActiveTool('brush'); if(e.key==='p') setActiveTool('pencil'); if(e.key==='m') setActiveTool('marker'); if(e.key==='e') setActiveTool('eraser'); });
 
-/* keyboard shortcuts */
-document.addEventListener('keydown', (e)=>{ if(e.key==='b') setActiveTool('brush'); if(e.key==='p') setActiveTool('pencil'); if(e.key==='m') setActiveTool('marker'); if(e.key==='e') setActiveTool('eraser'); });
+/* helper: push initial empty state for each layer */
+layers.forEach((L,idx)=>{ try{ const d=L.toDataURL(); history[idx].undos.push(d); }catch(e){} });
 
-status.textContent = 'Готово — выбери инструмент и рисуй.';
+status.textContent='Готово — выбери инструмент и рисуй.';
 </script>
 </body>
 </html>
