@@ -11,11 +11,11 @@
   header{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
 
   /* canvas stack */
-  #canvasWrap{ position:relative; width:100%; border:1px solid #ddd; background:white; border-radius:8px; overflow:hidden; touch-action:none; }
+  #canvasWrap{ position:relative; width:100%; border:1px solid #ddd; background:white; border-radius:8px; overflow:hidden; touch-action:none; /* ensure square display */ aspect-ratio:1/1; min-height:280px; }
   .layer{ position:absolute; left:0; top:0; width:100%; height:100%; display:block; }
   #interaction{ position:absolute; left:0; top:0; width:100%; height:100%; z-index:50; }
 
-  canvas{ display:block; width:100%; height:100%; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; background:transparent; }
+  canvas{ display:block; width:100%; height:100%; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; background:transparent; touch-action:none; }
 
   .controls{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center; }
   .tool-btn{ min-width:44px; height:44px; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:white; display:flex; gap:6px; align-items:center; justify-content:center; cursor:pointer; font-size:14px; user-select:none; }
@@ -51,14 +51,16 @@
   </header>
 
   <div id="canvasWrap" aria-label="Рисовальный холст" data-no-scroll>
-    <!-- 5 layers stacked -->
-    <canvas id="layer0" class="layer" width="800" height="800" aria-label="Слой 1"></canvas>
-    <canvas id="layer1" class="layer" width="800" height="800" aria-label="Слой 2"></canvas>
-    <canvas id="layer2" class="layer" width="800" height="800" aria-label="Слой 3"></canvas>
-    <canvas id="layer3" class="layer" width="800" height="800" aria-label="Слой 4"></canvas>
-    <canvas id="layer4" class="layer" width="800" height="800" aria-label="Слой 5"></canvas>
+    <!-- 5 layers stacked
+         z-index назначен так: layer0 выше всех остальных слоёв рисования,
+         а interaction остаётся сверху (z-index:50). -->
+    <canvas id="layer0" class="layer" width="800" height="800" aria-label="Слой 1" style="z-index:40;"></canvas>
+    <canvas id="layer1" class="layer" width="800" height="800" aria-label="Слой 2" style="z-index:30;"></canvas>
+    <canvas id="layer2" class="layer" width="800" height="800" aria-label="Слой 3" style="z-index:29;"></canvas>
+    <canvas id="layer3" class="layer" width="800" height="800" aria-label="Слой 4" style="z-index:28;"></canvas>
+    <canvas id="layer4" class="layer" width="800" height="800" aria-label="Слой 5" style="z-index:27;"></canvas>
     <!-- interaction canvas captures pointer input and is not drawn to directly -->
-    <canvas id="interaction" class="layer" width="800" height="800" aria-hidden="true"></canvas>
+    <canvas id="interaction" class="layer" width="800" height="800" aria-hidden="true" style="z-index:50;"></canvas>
     <div id="cursorPreview" aria-hidden="true"></div>
   </div>
 
@@ -188,15 +190,19 @@ setActiveLayer(0);
 /* ---------- Canvas sizing (square) ---------- */
 function fitAll(){
   const w = Math.max(280, Math.min(1100, Math.round(canvasWrap.clientWidth)));
+  // make canvasWrap square (height = width)
+  canvasWrap.style.height = w + 'px';
+
   layers.forEach((lv)=>{
+    // preserve content when resizing
     const tmp = document.createElement('canvas'); tmp.width = lv.width; tmp.height = lv.height; tmp.getContext('2d').drawImage(lv,0,0);
-    lv.width = w; lv.height = w; lv.style.width = '100%';
+    lv.width = w; lv.height = w; lv.style.width = '100%'; lv.style.height = '100%';
     lv.getContext('2d').clearRect(0,0,lv.width,lv.height);
     lv.getContext('2d').drawImage(tmp,0,0,tmp.width,tmp.height,0,0,lv.width,lv.height);
   });
   // interaction canvas
   const ttmp = document.createElement('canvas'); ttmp.width = interaction.width; ttmp.height = interaction.height; ttmp.getContext('2d').drawImage(interaction,0,0);
-  interaction.width = w; interaction.height = w; interaction.style.width = '100%';
+  interaction.width = w; interaction.height = w; interaction.style.width = '100%'; interaction.style.height = '100%';
   interaction.getContext('2d').clearRect(0,0,interaction.width,interaction.height);
 }
 window.addEventListener('resize', fitAll);
